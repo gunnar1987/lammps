@@ -21,38 +21,24 @@
    and molecular dynamics. Journal of Computational Physics.
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstdio>
+#include "fix_nve_spin.h"
 #include <cstring>
-
 #include "atom.h"
-#include "atom_vec.h"
 #include "citeme.h"
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
-#include "fix_nve_spin.h"
 #include "fix_precession_spin.h"
 #include "fix_langevin_spin.h"
 #include "fix_setforce_spin.h"
 #include "force.h"
-#include "math_vector.h"
-#include "math_extra.h"
-#include "math_const.h"
 #include "memory.h"
 #include "modify.h"
-#include "neighbor.h"
-#include "neigh_list.h"
-#include "pair.h"
-#include "pair_hybrid.h"
 #include "pair_spin.h"
-#include "respa.h"
 #include "update.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
-using namespace MathConst;
-using namespace MathExtra;
 
 static const char cite_fix_nve_spin[] =
   "fix nve/spin command:\n\n"
@@ -74,9 +60,9 @@ enum{NONE};
 
 FixNVESpin::FixNVESpin(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
-  pair(NULL), spin_pairs(NULL),
-  rsec(NULL), stack_head(NULL), stack_foot(NULL),
-  backward_stacks(NULL), forward_stacks(NULL)
+  pair(nullptr), spin_pairs(nullptr),
+  rsec(nullptr), stack_head(nullptr), stack_foot(nullptr),
+  backward_stacks(nullptr), forward_stacks(nullptr)
 {
   if (lmp->citeme) lmp->citeme->add(cite_fix_nve_spin);
 
@@ -91,7 +77,7 @@ FixNVESpin::FixNVESpin(LAMMPS *lmp, int narg, char **arg) :
 
   // checking if map array or hash is defined
 
-  if (atom->map_style == 0)
+  if (atom->map_style == Atom::MAP_NONE)
     error->all(FLERR,"Fix NVE/spin requires an atom map, see atom_modify");
 
   // defining sector_flag
@@ -105,12 +91,17 @@ FixNVESpin::FixNVESpin(LAMMPS *lmp, int narg, char **arg) :
 
   // defining lattice_flag
 
+  // changing the lattice option, from (yes,no) -> (moving,frozen)
+  // for now, (yes,no) still works (to avoid user's confusions).
+
   int iarg = 3;
   while (iarg < narg) {
     if (strcmp(arg[iarg],"lattice") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix/NVE/spin command");
       if (strcmp(arg[iarg+1],"no") == 0) lattice_flag = 0;
+      else if (strcmp(arg[iarg+1],"frozen") == 0) lattice_flag = 0;
       else if (strcmp(arg[iarg+1],"yes") == 0) lattice_flag = 1;
+      else if (strcmp(arg[iarg+1],"moving") == 0) lattice_flag = 1;
       else error->all(FLERR,"Illegal fix/NVE/spin command");
       iarg += 2;
     } else error->all(FLERR,"Illegal fix/NVE/spin command");
@@ -256,7 +247,7 @@ void FixNVESpin::init()
       locksetforcespin = (FixSetForceSpin *) modify->fix[iforce];
     }
   }
-  
+
   // setting the sector variables/lists
 
   nsectors = 0;
@@ -316,7 +307,7 @@ void FixNVESpin::initial_integrate(int /*vflag*/)
           ComputeInteractionsSpin(i);
           AdvanceSingleSpin(i);
           i = forward_stacks[i];
-	}
+        }
       }
     }
     for (int j = nsectors-1; j >= 0; j--) {     // advance quarter s for nlocal
@@ -327,7 +318,7 @@ void FixNVESpin::initial_integrate(int /*vflag*/)
           ComputeInteractionsSpin(i);
           AdvanceSingleSpin(i);
           i = backward_stacks[i];
-	}
+        }
       }
     }
   } else if (sector_flag == 0) {                // serial seq. update
@@ -369,7 +360,7 @@ void FixNVESpin::initial_integrate(int /*vflag*/)
           ComputeInteractionsSpin(i);
           AdvanceSingleSpin(i);
           i = forward_stacks[i];
-	}
+        }
       }
     }
     for (int j = nsectors-1; j >= 0; j--) {     // advance quarter s for nlocal
@@ -380,7 +371,7 @@ void FixNVESpin::initial_integrate(int /*vflag*/)
           ComputeInteractionsSpin(i);
           AdvanceSingleSpin(i);
           i = backward_stacks[i];
-	}
+        }
       }
     }
   } else if (sector_flag == 0) {                // serial seq. update

@@ -15,15 +15,13 @@
    Contributing author: Carsten Svaneborg (SDU)
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstdlib>
-#include <cstring>
 #include "improper_zero.h"
+
 #include "atom.h"
-#include "force.h"
-#include "comm.h"
-#include "memory.h"
 #include "error.h"
+#include "memory.h"
+
+#include <cstring>
 
 using namespace LAMMPS_NS;
 
@@ -83,7 +81,7 @@ void ImproperZero::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(FLERR,arg[0],atom->nimpropertypes,ilo,ihi);
+  utils::bounds(FLERR,arg[0],1,atom->nimpropertypes,ilo,ihi,error);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {

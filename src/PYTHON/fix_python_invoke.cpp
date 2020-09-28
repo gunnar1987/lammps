@@ -15,17 +15,15 @@
    Contributing author: Richard Berger (Temple U)
 ------------------------------------------------------------------------- */
 
-#include <Python.h>
-#include <cstdio>
-#include <cstring>
 #include "fix_python_invoke.h"
-#include "atom.h"
-#include "force.h"
-#include "update.h"
-#include "respa.h"
+
 #include "error.h"
 #include "lmppython.h"
 #include "python_compat.h"
+#include "update.h"
+
+#include <cstring>
+#include <Python.h>   // IWYU pragma: export
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -37,10 +35,7 @@ FixPythonInvoke::FixPythonInvoke(LAMMPS *lmp, int narg, char **arg) :
 {
   if (narg != 6) error->all(FLERR,"Illegal fix python/invoke command");
 
-  // Flags.
-  scalar_flag = 1;
-  
-  nevery = force->inumeric(FLERR,arg[3]);
+  nevery = utils::inumeric(FLERR,arg[3],false,lmp);
   if (nevery <= 0) error->all(FLERR,"Illegal fix python/invoke command");
 
   // ensure Python interpreter is initialized

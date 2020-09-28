@@ -11,22 +11,21 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cstring>
-#include <cstdlib>
 #include "fix_setforce_kokkos.h"
+
 #include "atom_kokkos.h"
 #include "update.h"
 #include "modify.h"
 #include "domain.h"
 #include "region.h"
-#include "respa.h"
 #include "input.h"
 #include "variable.h"
 #include "memory_kokkos.h"
 #include "error.h"
-#include "force.h"
 #include "atom_masks.h"
 #include "kokkos_base.h"
+
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -58,7 +57,7 @@ FixSetForceKokkos<DeviceType>::~FixSetForceKokkos()
   if (copymode) return;
 
   memoryKK->destroy_kokkos(k_sforce,sforce);
-  sforce = NULL;
+  sforce = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -75,7 +74,7 @@ void FixSetForceKokkos<DeviceType>::init()
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
-void FixSetForceKokkos<DeviceType>::post_force(int vflag)
+void FixSetForceKokkos<DeviceType>::post_force(int /*vflag*/)
 {
   atomKK->sync(execution_space, X_MASK | F_MASK | MASK_MASK);
 
@@ -87,7 +86,7 @@ void FixSetForceKokkos<DeviceType>::post_force(int vflag)
 
   // update region if necessary
 
-  region = NULL;
+  region = nullptr;
   if (iregion >= 0) {
     region = domain->regions[iregion];
     region->prematch();
@@ -186,7 +185,7 @@ void FixSetForceKokkos<DeviceType>::operator()(TagFixSetForceNonConstant, const 
 
 namespace LAMMPS_NS {
 template class FixSetForceKokkos<LMPDeviceType>;
-#ifdef KOKKOS_ENABLE_CUDA
+#ifdef LMP_KOKKOS_GPU
 template class FixSetForceKokkos<LMPHostType>;
 #endif
 }

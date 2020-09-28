@@ -11,23 +11,17 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include "pair_buck_coul_msm.h"
+#include <cmath>
+#include <cstring>
 #include "atom.h"
-#include "comm.h"
 #include "force.h"
 #include "kspace.h"
-#include "neighbor.h"
 #include "neigh_list.h"
-#include "math_const.h"
 #include "memory.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;
-using namespace MathConst;
 
 
 /* ---------------------------------------------------------------------- */
@@ -37,7 +31,7 @@ PairBuckCoulMSM::PairBuckCoulMSM(LAMMPS *lmp) : PairBuckCoulLong(lmp)
   ewaldflag = pppmflag = 0;
   msmflag = 1;
   nmax = 0;
-  ftmp = NULL;
+  ftmp = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -252,5 +246,5 @@ void *PairBuckCoulMSM::extract(const char *str, int &dim)
 {
   dim = 0;
   if (strcmp(str,"cut_coul") == 0) return (void *) &cut_coul;
-  return NULL;
+  return nullptr;
 }

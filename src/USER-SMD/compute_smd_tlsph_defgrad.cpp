@@ -22,20 +22,18 @@
  See the README file in the top-level LAMMPS directory.
  ------------------------------------------------------------------------- */
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <iostream>
-#include <Eigen/Eigen>
 #include "compute_smd_tlsph_defgrad.h"
+
 #include "atom.h"
-#include "update.h"
-#include "modify.h"
 #include "comm.h"
-#include "force.h"
-#include "memory.h"
 #include "error.h"
-#include "pair.h"
+#include "memory.h"
+#include "modify.h"
+#include "update.h"
+
+#include <cstring>
+#include <Eigen/Eigen>          // IWYU pragma: export
+
 using namespace Eigen;
 using namespace std;
 using namespace LAMMPS_NS;
@@ -51,7 +49,7 @@ ComputeSMDTLSPHDefgrad::ComputeSMDTLSPHDefgrad(LAMMPS *lmp, int narg, char **arg
         size_peratom_cols = 10;
 
         nmax = 0;
-        defgradVector = NULL;
+        defgradVector = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */

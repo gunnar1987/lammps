@@ -11,18 +11,16 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstring>
 #include "compute_body_local.h"
+
 #include "atom.h"
 #include "atom_vec_body.h"
 #include "body.h"
-#include "update.h"
-#include "domain.h"
-#include "force.h"
-#include "bond.h"
-#include "memory.h"
 #include "error.h"
+#include "memory.h"
+#include "update.h"
+
+#include <cstring>
 
 using namespace LAMMPS_NS;
 
@@ -33,7 +31,7 @@ enum{ID,TYPE,INDEX};
 /* ---------------------------------------------------------------------- */
 
 ComputeBodyLocal::ComputeBodyLocal(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg), which(NULL), index(NULL), avec(NULL), bptr(NULL)
+  Compute(lmp, narg, arg), which(nullptr), index(nullptr), avec(nullptr), bptr(nullptr)
 {
   if (narg < 4) error->all(FLERR,"Illegal compute body/local command");
 
@@ -49,7 +47,7 @@ ComputeBodyLocal::ComputeBodyLocal(LAMMPS *lmp, int narg, char **arg) :
     else if (strcmp(arg[iarg],"type") == 0) which[nvalues++] = TYPE;
     else {
       which[nvalues] = INDEX;
-      index[nvalues] = force->inumeric(FLERR,arg[iarg]) - 1;
+      index[nvalues] = utils::inumeric(FLERR,arg[iarg],false,lmp) - 1;
       nvalues++;
     }
   }
@@ -68,8 +66,8 @@ ComputeBodyLocal::ComputeBodyLocal(LAMMPS *lmp, int narg, char **arg) :
   else size_local_cols = nvalues;
 
   nmax = 0;
-  vector = NULL;
-  array = NULL;
+  vector = nullptr;
+  array = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */

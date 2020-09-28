@@ -19,28 +19,20 @@
 // due to OpenMPI bug which sets INT64_MAX via its mpi.h
 //   before lmptype.h can set flags to insure it is done correctly
 
-#include "lmptype.h"
-#include <mpi.h>
-#include <cstring>
-#include <cstdlib>
 #include "read_dump.h"
-#include "reader.h"
-#include "style_reader.h"
+
 #include "atom.h"
 #include "atom_vec.h"
-#include "update.h"
-#include "modify.h"
-#include "fix.h"
-#include "compute.h"
-#include "domain.h"
 #include "comm.h"
-#include "force.h"
-#include "irregular.h"
-#include "input.h"
-#include "variable.h"
+#include "domain.h"
 #include "error.h"
+#include "irregular.h"
 #include "memory.h"
-#include "utils.h"
+#include "reader.h"
+#include "style_reader.h"       // IWYU pragma: keep
+#include "update.h"
+
+#include <cstring>
 
 using namespace LAMMPS_NS;
 
@@ -63,23 +55,25 @@ ReadDump::ReadDump(LAMMPS *lmp) : Pointers(lmp)
   triclinic = domain->triclinic;
 
   nfile = 0;
-  files = NULL;
+  files = nullptr;
 
   nnew = maxnew = 0;
   nfield = 0;
-  fieldtype = NULL;
-  fieldlabel = NULL;
-  fields = NULL;
-  buf = NULL;
+  fieldtype = nullptr;
+  fieldlabel = nullptr;
+  fields = nullptr;
+  buf = nullptr;
 
   int n = strlen("native") + 1;
   readerstyle = new char[n];
   strcpy(readerstyle,"native");
 
   nreader = 0;
-  readers = NULL;
-  nsnapatoms = NULL;
+  readers = nullptr;
+  nsnapatoms = nullptr;
   clustercomm = MPI_COMM_NULL;
+  filereader = 0;
+  parallel = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -113,17 +107,17 @@ void ReadDump::command(int narg, char **arg)
   if (narg < 2) error->all(FLERR,"Illegal read_dump command");
 
   store_files(1,&arg[0]);
-  bigint nstep = force->bnumeric(FLERR,arg[1]);
+  bigint nstep = utils::bnumeric(FLERR,arg[1],false,lmp);
 
   int nremain = narg - 2;
   if (nremain) nremain = fields_and_keywords(nremain,&arg[narg-nremain]);
-  else nremain = fields_and_keywords(0,NULL);
+  else nremain = fields_and_keywords(0,nullptr);
   if (nremain) setup_reader(nremain,&arg[narg-nremain]);
-  else setup_reader(0,NULL);
+  else setup_reader(0,nullptr);
 
   // find the snapshot and read/bcast/process header info
 
-  if (me == 0 && screen) fprintf(screen,"Scanning dump file ...\n");
+  if (me == 0) utils::logmesg(lmp,"Scanning dump file ...\n");
 
   bigint ntimestep = seek(nstep,1);
   if (ntimestep < 0)
@@ -138,8 +132,7 @@ void ReadDump::command(int narg, char **arg)
 
   // read in the snapshot and reset system
 
-  if (me == 0 && screen)
-    fprintf(screen,"Reading snapshot from dump file ...\n");
+  if (me == 0) utils::logmesg(lmp,"Reading snapshot from dump file ...\n");
 
   bigint natoms_prev = atom->natoms;
   atoms();
@@ -169,26 +162,14 @@ void ReadDump::command(int narg, char **arg)
 
   domain->print_box("  ");
 
-  if (me == 0) {
-    if (screen) {
-      fprintf(screen,"  " BIGINT_FORMAT " atoms before read\n",natoms_prev);
-      fprintf(screen,"  " BIGINT_FORMAT " atoms in snapshot\n",nsnap_all);
-      fprintf(screen,"  " BIGINT_FORMAT " atoms purged\n",npurge_all);
-      fprintf(screen,"  " BIGINT_FORMAT " atoms replaced\n",nreplace_all);
-      fprintf(screen,"  " BIGINT_FORMAT " atoms trimmed\n",ntrim_all);
-      fprintf(screen,"  " BIGINT_FORMAT " atoms added\n",nadd_all);
-      fprintf(screen,"  " BIGINT_FORMAT " atoms after read\n",atom->natoms);
-    }
-    if (logfile) {
-      fprintf(logfile,"  " BIGINT_FORMAT " atoms before read\n",natoms_prev);
-      fprintf(logfile,"  " BIGINT_FORMAT " atoms in snapshot\n",nsnap_all);
-      fprintf(logfile,"  " BIGINT_FORMAT " atoms purged\n",npurge_all);
-      fprintf(logfile,"  " BIGINT_FORMAT " atoms replaced\n",nreplace_all);
-      fprintf(logfile,"  " BIGINT_FORMAT " atoms trimmed\n",ntrim_all);
-      fprintf(logfile,"  " BIGINT_FORMAT " atoms added\n",nadd_all);
-      fprintf(logfile,"  " BIGINT_FORMAT " atoms after read\n",atom->natoms);
-    }
-  }
+  if (me == 0)
+    utils::logmesg(lmp, fmt::format("  {} atoms before read\n",natoms_prev)
+                   + fmt::format("  {} atoms in snapshot\n",nsnap_all)
+                   + fmt::format("  {} atoms purged\n",npurge_all)
+                   + fmt::format("  {} atoms replaced\n",nreplace_all)
+                   + fmt::format("  {} atoms trimmed\n",ntrim_all)
+                   + fmt::format("  {} atoms added\n",nadd_all)
+                   + fmt::format("  {} atoms after read\n",atom->natoms));
 }
 
 /* ---------------------------------------------------------------------- */
@@ -262,12 +243,18 @@ void ReadDump::setup_reader(int narg, char **arg)
     for (int i = 0; i < nreader; i++) \
       readers[i] = new Class(lmp); \
   }
-#include "style_reader.h"
+#include "style_reader.h"       // IWYU pragma: keep
 #undef READER_CLASS
 
   // unrecognized style
 
-  else error->all(FLERR,utils::check_packages_for_style("reader",readerstyle,lmp).c_str());
+  else error->all(FLERR,utils::check_packages_for_style("reader",readerstyle,lmp));
+
+  if (utils::strmatch(readerstyle,"^adios")) {
+      // everyone is a reader with adios
+      parallel = 1;
+      filereader = 1;
+  }
 
   // pass any arguments to readers
 
@@ -290,7 +277,7 @@ bigint ReadDump::seek(bigint nrequest, int exact)
 
   // proc 0 finds the timestep in its first reader
 
-  if (me == 0) {
+  if (me == 0 || parallel) {
 
     // exit file loop when dump timestep >= nrequest
     // or files exhausted
@@ -298,13 +285,9 @@ bigint ReadDump::seek(bigint nrequest, int exact)
     for (ifile = 0; ifile < nfile; ifile++) {
       ntimestep = -1;
       if (multiproc) {
-        char *ptr = strchr(files[ifile],'%');
-        char *multiname = new char[strlen(files[ifile]) + 16];
-        *ptr = '\0';
-        sprintf(multiname,"%s%d%s",files[ifile],0,ptr+1);
-        *ptr = '%';
-        readers[0]->open_file(multiname);
-        delete [] multiname;
+        std::string multiname = files[ifile];
+        multiname.replace(multiname.find("%"),1,"0");
+        readers[0]->open_file(multiname.c_str());
       } else readers[0]->open_file(files[ifile]);
 
       while (1) {
@@ -323,10 +306,12 @@ bigint ReadDump::seek(bigint nrequest, int exact)
     if (exact && ntimestep != nrequest) ntimestep = -1;
   }
 
-  // proc 0 broadcasts timestep and currentfile to all procs
+  if (!parallel) {
+    // proc 0 broadcasts timestep and currentfile to all procs
 
-  MPI_Bcast(&ntimestep,1,MPI_LMP_BIGINT,0,world);
-  MPI_Bcast(&currentfile,1,MPI_INT,0,world);
+    MPI_Bcast(&ntimestep,1,MPI_LMP_BIGINT,0,world);
+    MPI_Bcast(&currentfile,1,MPI_INT,0,world);
+  }
 
   // if ntimestep < 0:
   // all filereader procs close all their files and return
@@ -344,13 +329,9 @@ bigint ReadDump::seek(bigint nrequest, int exact)
   if (multiproc && filereader) {
     for (int i = 0; i < nreader; i++) {
       if (me == 0 && i == 0) continue;    // proc 0, reader 0 already found it
-      char *ptr = strchr(files[currentfile],'%');
-      char *multiname = new char[strlen(files[currentfile]) + 16];
-      *ptr = '\0';
-      sprintf(multiname,"%s%d%s",files[currentfile],firstfile+i,ptr+1);
-      *ptr = '%';
-      readers[i]->open_file(multiname);
-      delete [] multiname;
+      std::string multiname = files[currentfile];
+      multiname.replace(multiname.find("%"),1,fmt::format("{}",firstfile+i));
+      readers[i]->open_file(multiname.c_str());
 
       bigint step;
       while (1) {
@@ -385,7 +366,7 @@ bigint ReadDump::next(bigint ncurrent, bigint nlast, int nevery, int nskip)
 
   // proc 0 finds the timestep in its first reader
 
-  if (me == 0) {
+  if (me == 0 || parallel) {
 
     // exit file loop when dump timestep matches all criteria
     // or files exhausted
@@ -396,13 +377,9 @@ bigint ReadDump::next(bigint ncurrent, bigint nlast, int nevery, int nskip)
       ntimestep = -1;
       if (ifile != currentfile) {
         if (multiproc) {
-          char *ptr = strchr(files[ifile],'%');
-          char *multiname = new char[strlen(files[ifile]) + 16];
-          *ptr = '\0';
-          sprintf(multiname,"%s%d%s",files[ifile],0,ptr+1);
-          *ptr = '%';
-          readers[0]->open_file(multiname);
-          delete [] multiname;
+          std::string multiname = files[ifile];
+          multiname.replace(multiname.find("%"),1,"0");
+          readers[0]->open_file(multiname.c_str());
         } else readers[0]->open_file(files[ifile]);
       }
 
@@ -431,17 +408,20 @@ bigint ReadDump::next(bigint ncurrent, bigint nlast, int nevery, int nskip)
     if (ntimestep > nlast) ntimestep = -1;
   }
 
-  // proc 0 broadcasts timestep and currentfile to all procs
+  if (!parallel) {
+    // proc 0 broadcasts timestep and currentfile to all procs
 
-  MPI_Bcast(&ntimestep,1,MPI_LMP_BIGINT,0,world);
-  MPI_Bcast(&currentfile,1,MPI_INT,0,world);
+    MPI_Bcast(&ntimestep,1,MPI_LMP_BIGINT,0,world);
+    MPI_Bcast(&currentfile,1,MPI_INT,0,world);
+  }
 
   // if ntimestep < 0:
   // all filereader procs close all their files and return
 
   if (ntimestep < 0) {
-    for (int i = 0; i < nreader; i++)
-      readers[i]->close_file();
+    if (filereader)
+      for (int i = 0; i < nreader; i++)
+        readers[i]->close_file();
     return ntimestep;
   }
 
@@ -451,13 +431,9 @@ bigint ReadDump::next(bigint ncurrent, bigint nlast, int nevery, int nskip)
   if (multiproc && filereader) {
     for (int i = 0; i < nreader; i++) {
       if (me == 0 && i == 0) continue;
-      char *ptr = strchr(files[currentfile],'%');
-      char *multiname = new char[strlen(files[currentfile]) + 16];
-      *ptr = '\0';
-      sprintf(multiname,"%s%d%s",files[currentfile],firstfile+i,ptr+1);
-      *ptr = '%';
-      readers[i]->open_file(multiname);
-      delete [] multiname;
+      std::string multiname = files[currentfile];
+      multiname.replace(multiname.find("%"),1,fmt::format("{}",firstfile+i));
+      readers[i]->open_file(multiname.c_str());
 
       bigint step;
       while (1) {
@@ -494,10 +470,12 @@ void ReadDump::header(int fieldinfo)
                                               xflag,yflag,zflag);
   }
 
-  MPI_Bcast(nsnapatoms,nreader,MPI_LMP_BIGINT,0,clustercomm);
-  MPI_Bcast(&boxinfo,1,MPI_INT,0,clustercomm);
-  MPI_Bcast(&triclinic_snap,1,MPI_INT,0,clustercomm);
-  MPI_Bcast(&box[0][0],9,MPI_DOUBLE,0,clustercomm);
+  if (!parallel) {
+    MPI_Bcast(nsnapatoms,nreader,MPI_LMP_BIGINT,0,clustercomm);
+    MPI_Bcast(&boxinfo,1,MPI_INT,0,clustercomm);
+    MPI_Bcast(&triclinic_snap,1,MPI_INT,0,clustercomm);
+    MPI_Bcast(&box[0][0],9,MPI_DOUBLE,0,clustercomm);
+  }
 
   // local copy of snapshot box parameters
   // used in xfield,yfield,zfield when converting dump atom to absolute coords
@@ -509,7 +487,7 @@ void ReadDump::header(int fieldinfo)
     yhi = box[1][1];
     zlo = box[2][0];
     zhi = box[2][1];
-    
+
     if (triclinic_snap) {
       xy = box[0][2];
       xz = box[1][2];
@@ -619,7 +597,7 @@ void ReadDump::atoms()
   // if purgeflag set, delete all current atoms
 
   if (purgeflag) {
-    if (atom->map_style) atom->map_clear();
+    if (atom->map_style != Atom::MAP_NONE) atom->map_clear();
     npurge = atom->nlocal;
     atom->nlocal = atom->nghost = 0;
     atom->natoms = 0;
@@ -644,7 +622,7 @@ void ReadDump::atoms()
   // this will be needed to match new atoms to old atoms
 
   int mapflag = 0;
-  if (atom->map_style == 0) {
+  if (atom->map_style == Atom::MAP_NONE) {
     mapflag = 1;
     atom->map_init();
     atom->map_set();
@@ -665,7 +643,7 @@ void ReadDump::atoms()
 
   if (mapflag) {
     atom->map_delete();
-    atom->map_style = 0;
+    atom->map_style = Atom::MAP_NONE;
   } else {
     atom->nghost = 0;
     atom->map_init();
@@ -720,7 +698,7 @@ void ReadDump::read_atoms()
   // each reading proc reads one file and splits data across cluster
   // cluster can be all procs or a subset
 
-  if (!multiproc || multiproc_nfile < nprocs) {
+  if (!parallel && (!multiproc || multiproc_nfile < nprocs)) {
     nsnap = nsnapatoms[0];
 
     if (filereader) {
@@ -735,7 +713,7 @@ void ReadDump::read_atoms()
 
       if (nnew > maxnew || maxnew == 0) {
         memory->destroy(fields);
-        maxnew = MAX(nnew,1);    // avoid NULL ptr
+        maxnew = MAX(nnew,1);    // avoid null pointer
         memory->create(fields,maxnew,nfield,"read_dump:fields");
       }
 
@@ -775,7 +753,7 @@ void ReadDump::read_atoms()
       nnew = static_cast<int> (olast - ofirst);
       if (nnew > maxnew || maxnew == 0) {
         memory->destroy(fields);
-        maxnew = MAX(nnew,1);     // avoid NULL ptr
+        maxnew = MAX(nnew,1);     // avoid null pointer
         memory->create(fields,maxnew,nfield,"read_dump:fields");
       }
 
@@ -792,7 +770,7 @@ void ReadDump::read_atoms()
   // every proc is a filereader, reads one or more files
   // each proc keeps all data it reads, no communication required
 
-  } else if (multiproc_nfile >= nprocs) {
+  } else if (multiproc_nfile >= nprocs || parallel) {
     bigint sum = 0;
     for (int i = 0; i < nreader; i++)
       sum += nsnapatoms[i];
@@ -801,7 +779,7 @@ void ReadDump::read_atoms()
     nnew = static_cast<int> (sum);
     if (nnew > maxnew || maxnew == 0) {
       memory->destroy(fields);
-      maxnew = MAX(nnew,1);     // avoid NULL ptr
+      maxnew = MAX(nnew,1);     // avoid null pointer
       memory->create(fields,maxnew,nfield,"read_dump:fields");
     }
 
@@ -810,7 +788,12 @@ void ReadDump::read_atoms()
       nsnap = nsnapatoms[i];
       ntotal = 0;
       while (ntotal < nsnap) {
-        nread = MIN(CHUNK,nsnap-ntotal);
+        if (parallel) {
+          // read the whole thing at once
+          nread = nsnap-ntotal;
+        } else {
+          nread = MIN(CHUNK,nsnap-ntotal);
+        }
         readers[i]->read_atoms(nread,nfield,&fields[nnew+ntotal]);
         ntotal += nread;
       }
@@ -1122,7 +1105,7 @@ void ReadDump::migrate_new_atoms()
   Irregular *irregular = new Irregular(lmp);
   int nrecv = irregular->create_data(nnew,procassign,1);
   int newmaxnew = MAX(nrecv,maxnew);
-  newmaxnew = MAX(newmaxnew,1);    // avoid NULL ptr
+  newmaxnew = MAX(newmaxnew,1);    // avoid null pointer
   memory->create(newfields,newmaxnew,nfield,"read_dump:newfields");
   irregular->exchange_data((char *) &fields[0][0],nfield*sizeof(double),
                            (char *) &newfields[0][0]);
@@ -1224,14 +1207,14 @@ int ReadDump::fields_and_keywords(int narg, char **arg)
   purgeflag = 0;
   trimflag = 0;
   addflag = NOADD;
-  for (int i = 0; i < nfield; i++) fieldlabel[i] = NULL;
+  for (int i = 0; i < nfield; i++) fieldlabel[i] = nullptr;
   scaleflag = 0;
   wrapflag = 1;
 
   while (iarg < narg) {
     if (strcmp(arg[iarg],"nfile") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal read_dump command");
-      multiproc_nfile = force->inumeric(FLERR,arg[iarg+1]);
+      multiproc_nfile = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
       iarg += 2;
     } else if (strcmp(arg[iarg],"box") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal read_dump command");

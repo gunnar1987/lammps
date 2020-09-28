@@ -11,13 +11,13 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <mpi.h>
-#include <cstring>
 #include "compute_bond.h"
-#include "update.h"
-#include "force.h"
+
+#include "bond.h"
 #include "bond_hybrid.h"
 #include "error.h"
+#include "force.h"
+#include "update.h"
 
 using namespace LAMMPS_NS;
 
@@ -25,7 +25,7 @@ using namespace LAMMPS_NS;
 
 ComputeBond::ComputeBond(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  emine(NULL)
+  emine(nullptr)
 {
   if (narg != 3) error->all(FLERR,"Illegal compute bond command");
 

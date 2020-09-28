@@ -11,15 +11,14 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cstdlib>
-#include <cstring>
 #include "fix_property_atom_kokkos.h"
+
 #include "atom_kokkos.h"
-#include "comm.h"
-#include "memory_kokkos.h"
-#include "error.h"
-#include "update.h"
 #include "atom_masks.h"
+#include "error.h"
+#include "memory_kokkos.h"
+
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;

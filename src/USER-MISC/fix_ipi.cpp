@@ -15,15 +15,12 @@
    Contributing author: Michele Ceriotti (EPFL), Axel Kohlmeyer (Temple U)
 ------------------------------------------------------------------------- */
 
-#include <mpi.h>
-#include <cstdio>
-#include <cstring>
-#include <cstdlib>
 #include "fix_ipi.h"
+
+#include <cstring>
 #include "atom.h"
 #include "force.h"
 #include "update.h"
-#include "respa.h"
 #include "error.h"
 #include "kspace.h"
 #include "modify.h"
@@ -32,8 +29,6 @@
 #include "neighbor.h"
 #include "irregular.h"
 #include "domain.h"
-#include "compute_pressure.h"
-#include <errno.h>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -50,7 +45,7 @@ using namespace FixConst;
 
 // socket interface
 #ifndef _WIN32
-#include <cstdlib>
+
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -112,7 +107,7 @@ static void open_socket(int &sockfd, int inet, int port, char* host,
   } else {  // creates a unix socket
     struct sockaddr_un serv_addr;
 
-    // fills up details of the socket addres
+    // fills up details of the socket address
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sun_family = AF_UNIX;
     strcpy(serv_addr.sun_path, "/tmp/ipi_");
@@ -172,7 +167,7 @@ static void readbuffer(int sockfd, char *data, int len, Error* error)
 /* ---------------------------------------------------------------------- */
 
 FixIPI::FixIPI(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg), irregular(NULL)
+  Fix(lmp, narg, arg), irregular(nullptr)
 {
   /* format for fix:
    *  fix  num  group_id ipi host port [unix]
@@ -190,7 +185,7 @@ FixIPI::FixIPI(LAMMPS *lmp, int narg, char **arg) :
     error->warning(FLERR,"Fix ipi always uses group all");
 
   host = strdup(arg[3]);
-  port = force->inumeric(FLERR,arg[4]);
+  port = utils::inumeric(FLERR,arg[4],false,lmp);
 
   inet   = ((narg > 5) && (strcmp(arg[5],"unix") == 0) ) ? 0 : 1;
   master = (comm->me==0) ? 1 : 0;

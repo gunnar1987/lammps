@@ -11,11 +11,12 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cstring>
 #include "imbalance_store.h"
+
 #include "atom.h"
-#include "input.h"
 #include "error.h"
+
+#include <cstring>
 
 using namespace LAMMPS_NS;
 
@@ -63,7 +64,7 @@ void ImbalanceStore::compute(double *weight)
 
 /* -------------------------------------------------------------------- */
 
-void ImbalanceStore::info(FILE *fp)
+std::string ImbalanceStore::info()
 {
-  fprintf(fp,"  storing weight in atom property d_%s\n",name);
+  return fmt::format("  storing weight in atom property d_{}\n",name);
 }

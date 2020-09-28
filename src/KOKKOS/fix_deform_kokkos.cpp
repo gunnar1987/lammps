@@ -15,24 +15,23 @@
    Contributing author: Pieter in 't Veld (SNL)
 ------------------------------------------------------------------------- */
 
-#include <cstring>
-#include <cstdlib>
-#include <cmath>
 #include "fix_deform_kokkos.h"
+
 #include "atom_kokkos.h"
-#include "update.h"
-#include "comm.h"
-#include "irregular.h"
-#include "domain_kokkos.h"
-#include "lattice.h"
-#include "force.h"
-#include "modify.h"
-#include "math_const.h"
-#include "kspace.h"
-#include "input.h"
-#include "variable.h"
-#include "error.h"
 #include "atom_masks.h"
+#include "domain_kokkos.h"
+#include "error.h"
+#include "force.h"
+#include "input.h"
+#include "irregular.h"
+#include "kspace.h"
+#include "math_const.h"
+#include "modify.h"
+#include "update.h"
+#include "variable.h"
+
+#include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;

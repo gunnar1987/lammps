@@ -11,19 +11,15 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <mpi.h>
-#include <cstdlib>
-#include <cstring>
 #include "compute_temp_drude.h"
+
+#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "force.h"
-#include "group.h"
 #include "modify.h"
-#include "fix.h"
+#include "fix_drude.h"
 #include "domain.h"
-#include "lattice.h"
-#include "memory.h"
 #include "error.h"
 #include "comm.h"
 
@@ -47,9 +43,9 @@ ComputeTempDrude::ComputeTempDrude(LAMMPS *lmp, int narg, char **arg) :
   tempflag = 0; // because does not compute a single temperature (scalar and vector)
 
   vector = new double[size_vector];
-  fix_drude = NULL;
-  id_temp = NULL;
-  temperature = NULL;
+  fix_drude = nullptr;
+  id_temp = nullptr;
+  temperature = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */

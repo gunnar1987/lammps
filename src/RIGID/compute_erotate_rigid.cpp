@@ -11,9 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <mpi.h>
-#include <cstring>
 #include "compute_erotate_rigid.h"
+#include <cstring>
 #include "update.h"
 #include "force.h"
 #include "modify.h"
@@ -27,7 +26,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeERotateRigid::ComputeERotateRigid(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg), rfix(NULL)
+  Compute(lmp, narg, arg), rfix(nullptr)
 {
   if (narg != 4) error->all(FLERR,"Illegal compute erotate/rigid command");
 

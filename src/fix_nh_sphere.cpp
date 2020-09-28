@@ -15,16 +15,17 @@
    Contributing author: Mike Brown (SNL)
 ------------------------------------------------------------------------- */
 
-#include <cmath>
 #include "fix_nh_sphere.h"
+
 #include "atom.h"
-#include "atom_vec.h"
-#include "group.h"
+#include "domain.h"
 #include "error.h"
 #include "force.h"
-#include "domain.h"
-#include "math_vector.h"
 #include "math_extra.h"
+#include "math_vector.h"
+
+#include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;

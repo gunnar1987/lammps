@@ -15,15 +15,13 @@
    Contributing author: Andres Jaramillo-Botero
 ------------------------------------------------------------------------- */
 
-#include <mpi.h>
-#include <cmath>
-#include <cstdlib>
+
+
 #include "compute_ke_eff.h"
 #include "atom.h"
 #include "update.h"
 #include "force.h"
 #include "domain.h"
-#include "group.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;

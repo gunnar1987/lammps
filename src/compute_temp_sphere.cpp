@@ -11,16 +11,14 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <mpi.h>
-#include <cstring>
 #include "compute_temp_sphere.h"
+
+#include <cstring>
 #include "atom.h"
-#include "atom_vec.h"
 #include "update.h"
 #include "force.h"
 #include "domain.h"
 #include "modify.h"
-#include "comm.h"
 #include "group.h"
 #include "error.h"
 
@@ -34,7 +32,7 @@ enum{ROTATE,ALL};
 
 ComputeTempSphere::ComputeTempSphere(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  id_bias(NULL)
+  id_bias(nullptr)
 {
   if (narg < 3) error->all(FLERR,"Illegal compute temp/sphere command");
 

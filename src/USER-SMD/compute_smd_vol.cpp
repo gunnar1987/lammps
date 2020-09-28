@@ -22,13 +22,13 @@
  See the README file in the top-level LAMMPS directory.
  ------------------------------------------------------------------------- */
 
-#include <cstring>
 #include "compute_smd_vol.h"
+
+#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "modify.h"
 #include "comm.h"
-#include "force.h"
 #include "memory.h"
 #include "error.h"
 
@@ -48,7 +48,7 @@ ComputeSMDVol::ComputeSMDVol(LAMMPS *lmp, int narg, char **arg) :
         size_peratom_cols = 0;
 
         nmax = 0;
-        volVector = NULL;
+        volVector = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */

@@ -24,8 +24,10 @@
   <http://www.gnu.org/licenses/>.
   ----------------------------------------------------------------------*/
 
-#include "pair_reaxc.h"
 #include "reaxc_control.h"
+#include <cstdlib>
+#include <cstring>
+#include "reaxc_defs.h"
 #include "reaxc_tool_box.h"
 
 #include "error.h"
@@ -39,7 +41,7 @@ char Read_Control_File( char *control_file, control_params* control,
   double  val;
 
   /* open control file */
-  if ( (fp = fopen( control_file, "r" ) ) == NULL ) {
+  if ( (fp = fopen( control_file, "r" ) ) == nullptr ) {
     control->error_ptr->all(FLERR, "The control file cannot be opened");
   }
 

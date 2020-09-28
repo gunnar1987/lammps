@@ -11,19 +11,13 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstring>
 #include "compute_spec_atom.h"
-#include "math_extra.h"
+#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "force.h"
-#include "domain.h"
 #include "memory.h"
 #include "error.h"
-
-#include "reaxc_defs.h"
-#include "reaxc_types.h"
 #include "pair_reaxc.h"
 
 using namespace LAMMPS_NS;
@@ -123,8 +117,8 @@ ComputeSpecAtom::ComputeSpecAtom(LAMMPS *lmp, int narg, char **arg) :
   }
 
   nmax = 0;
-  vector = NULL;
-  array = NULL;
+  vector = nullptr;
+  array = nullptr;
 
 }
 

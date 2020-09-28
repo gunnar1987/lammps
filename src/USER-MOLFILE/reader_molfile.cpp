@@ -15,18 +15,15 @@
    Contributing author: Axel Kohlmeyer (Temple U)
 ------------------------------------------------------------------------- */
 
-#include <cstring>
-#include <cstdlib>
-#include <cmath>
 #include "reader_molfile.h"
-#include "atom.h"
-#include "comm.h"
-#include "memory.h"
-#include "error.h"
-
 #include "molfile_interface.h"
-#include "math_const.h"
 
+#include "comm.h"
+#include "error.h"
+#include "math_const.h"
+#include "memory.h"
+
+#include <cmath>
 using namespace LAMMPS_NS;
 typedef MolfileInterface MFI;
 using namespace MathConst;
@@ -45,11 +42,11 @@ static bool is_smalldiff(const float &val1, const float &val2)
 
 ReaderMolfile::ReaderMolfile(LAMMPS *lmp) : Reader(lmp)
 {
-  mf = NULL;
-  coords = NULL;
-  vels = NULL;
-  types = NULL;
-  fieldindex = NULL;
+  mf = nullptr;
+  coords = nullptr;
+  vels = nullptr;
+  types = nullptr;
+  fieldindex = nullptr;
   nstep = 0;
   needvels = 0;
   me = comm->me;
@@ -159,7 +156,7 @@ int ReaderMolfile::read_time(bigint &ntimestep)
   int rv;
 
   // try to read in the time step (coordinates, velocities and cell only)
-  rv = mf->timestep(coords, vels, cell, NULL);
+  rv = mf->timestep(coords, vels, cell, nullptr);
   if (rv != 0) return 1;
 
   // we fake time step numbers.
@@ -190,7 +187,7 @@ void ReaderMolfile::skip()
      match Nfield fields to per-atom column labels
      allocate and set fieldindex = which column each field maps to
      fieldtype = X,VX,IZ etc
-     fieldlabel = user-specified label or NULL if use fieldtype default
+     fieldlabel = user-specified label or nullptr if use fieldtype default
    xyz flag = scaledflag if has fieldlabel name, else set by x,xs,xu,xsu
    only called by proc 0
 ------------------------------------------------------------------------- */
@@ -284,7 +281,7 @@ bigint ReaderMolfile::read_header(double box[3][3], int &boxinfo, int &triclinic
   }
 
   // if no field info requested, just return
- 
+
  if (!fieldinfo) return natoms;
 
   memory->create(fieldindex,nfield,"read_dump:fieldindex");

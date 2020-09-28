@@ -12,7 +12,8 @@
 ------------------------------------------------------------------------- */
 
 #include <cmath>
-#include <cstdlib>
+#include <cstring>
+
 #include "fix_nvt_sllod_eff.h"
 #include "math_extra.h"
 #include "atom.h"

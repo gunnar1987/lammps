@@ -14,8 +14,7 @@
 #ifndef LMP_BOND_H
 #define LMP_BOND_H
 
-#include <cstdio>
-#include "pointers.h"
+#include "pointers.h"  // IWYU pragma: export
 
 namespace LAMMPS_NS {
 
@@ -53,7 +52,7 @@ class Bond : protected Pointers {
   virtual void write_data(FILE *) {}
   virtual double single(int, double, int, int, double &) = 0;
   virtual double memory_usage();
-  virtual void *extract(char *, int &) {return NULL;}
+  virtual void *extract(const char *, int &) {return nullptr;}
   virtual void reinit();
 
   void write_file(int, char**);
