@@ -82,7 +82,7 @@ DumpPDLP::DumpPDLP(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
   unwrap_flag = 0;
   stage_name=NULL;
 
-  every_dump = force->inumeric(FLERR,arg[3]);
+  every_dump = utils::inumeric(FLERR,arg[3],false,lmp);
   
   every_xyz = -1;
   every_image = -1;

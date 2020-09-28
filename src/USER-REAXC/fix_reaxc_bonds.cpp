@@ -41,7 +41,7 @@ FixReaxCBonds::FixReaxCBonds(LAMMPS *lmp, int narg, char **arg) :
   //RS additional options for pdlp dump of bonds
   if (narg == 7) {
     if (strcmp(arg[5],"pdlp") != 0) error->all(FLERR, "Illegal fix reax/c/bonds command 1");
-    nbondmax = force->inumeric(FLERR,arg[6]);
+    nbondmax = utils::inumeric(FLERR,arg[6],false,lmp);
     if (nbondmax < 0 )
       error->all(FLERR,"Illegal fix reax/c/bonds command 2");
 
