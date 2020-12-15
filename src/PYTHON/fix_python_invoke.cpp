@@ -35,6 +35,14 @@ FixPythonInvoke::FixPythonInvoke(LAMMPS *lmp, int narg, char **arg) :
 {
   if (narg != 6) error->all(FLERR,"Illegal fix python/invoke command");
 
+  // RS this needs to be tested ... anything missing? is virial ok? 
+  //          in fix_external thermo_energy is not set .. why?
+  scalar_flag = 1;
+  virial_flag = 1;
+  thermo_energy = 1;
+  thermo_virial = 1;
+  extscalar = 1;
+
   nevery = utils::inumeric(FLERR,arg[3],false,lmp);
   if (nevery <= 0) error->all(FLERR,"Illegal fix python/invoke command");
 
