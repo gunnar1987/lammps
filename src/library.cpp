@@ -2437,6 +2437,7 @@ void lammps_gather_atoms_subset(void *handle, char *name,
    see scatter_atoms_subset() to scatter data for some (or all) atoms, unordered
    name = desired quantity, e.g. x or charge
    type = 0 for integer values, 1 for double values
+            RS: 2 for double values to be added instead of just replacing the orig. value
    count = # of per-atom values, e.g. 1 for type or charge, 3 for x or f
      use count = 3 with "image" for xyz to be packed into single image flag
    data = atom-based values in 1d data, ordered by count, then by atom ID
@@ -2542,11 +2543,22 @@ void lammps_scatter_atoms(void *handle, char *name,
             vector[m] = dptr[i];
 
       } else {
-        for (i = 0; i < natoms; i++) {
-          if ((m = lmp->atom->map(i+1)) >= 0) {
-            offset = count*i;
-            for (j = 0; j < count; j++)
-              array[m][j] = dptr[offset++];
+        if (type == 1) {
+          for (i = 0; i < natoms; i++) {
+            if ((m = lmp->atom->map(i+1)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] = dptr[offset++];
+            }
+          }
+        } else {
+          // RS add instead of replacing values in array (for type >1)
+          for (i = 0; i < natoms; i++) {
+            if ((m = lmp->atom->map(i+1)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] += dptr[offset++];
+            }
           }
         }
       }
@@ -2563,6 +2575,7 @@ void lammps_scatter_atoms(void *handle, char *name,
    see scatter_atoms() to scatter data for all atoms, ordered by consecutive IDs
    name = desired quantity, e.g. x or charge
    type = 0 for integer values, 1 for double values
+            RS: 2 for double values to be added instead of just replacing the orig. value
    count = # of per-atom values, e.g. 1 for type or charge, 3 for x or f
      use count = 3 with "image" for xyz to be packed into single image flag
    ndata = # of atoms in ids and data (could be all atoms)
@@ -2678,12 +2691,24 @@ void lammps_scatter_atoms_subset(void *handle, char *name,
         }
 
       } else {
-        for (i = 0; i < ndata; i++) {
-          id = ids[i];
-          if ((m = lmp->atom->map(id)) >= 0) {
-            offset = count*i;
-            for (j = 0; j < count; j++)
-              array[m][j] = dptr[offset++];
+        if (type == 1) {
+          for (i = 0; i < ndata; i++) {
+            id = ids[i];
+            if ((m = lmp->atom->map(id)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] = dptr[offset++];
+            }
+          }
+        } else {
+          // RS add instead of replacing values in array (for type >1)
+          for (i = 0; i < ndata; i++) {
+            id = ids[i];
+            if ((m = lmp->atom->map(id)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] += dptr[offset++];
+            }
           }
         }
       }
