@@ -40,7 +40,7 @@
 #include "version.h"
 #include "thermo.h"
 
-#include "fix_reaxc_bonds.h"
+#include "fix_reaxff_bonds.h"
 #include "modify.h"
 
 using namespace LAMMPS_NS;
@@ -187,7 +187,7 @@ DumpMFP5::DumpMFP5(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 
   // if bond are written get corresponding fix
   // TBI check if fix exists .. we should take care for this with pylmps but a safety check would be good
-  rxbfix = (FixReaxCBonds *) modify->fix[modify->find_fix_by_style("reax/c/bonds")];
+  rxbfix = (FixReaxFFBonds *) modify->fix[modify->find_fix_by_style("reax/c/bonds")];
   //printf("DEBUG DEBUG size of nmaxbonds %d\n", rxbfix->nbondmax);
 
   //printf ("size_one is %d\n", size_one);

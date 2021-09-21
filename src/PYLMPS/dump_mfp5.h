@@ -77,7 +77,7 @@ class DumpMFP5 : public Dump {
 
   int dump_count;
 
-  FixReaxCBonds *rxbfix;
+  FixReaxFFBonds *rxbfix;
 
   void init_style();
   int modify_param(int, char **);
