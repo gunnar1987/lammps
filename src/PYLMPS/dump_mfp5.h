@@ -28,7 +28,7 @@ DumpStyle(mfp5,DumpMFP5)
 #include "hdf5.h"
 
 #include "fix.h"
-#include "fix_reaxc_bonds.h"
+#include "fix_reaxff_bonds.h"
 
 
 namespace LAMMPS_NS {
