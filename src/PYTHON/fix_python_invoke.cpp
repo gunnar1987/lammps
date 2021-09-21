@@ -41,7 +41,8 @@ FixPythonInvoke::FixPythonInvoke(LAMMPS *lmp, int narg, char **arg) :
   // RS this needs to be tested ... anything missing? is virial ok? 
   //          in fix_external thermo_energy is not set .. why?
   scalar_flag = 1;
-  virial_flag = 1;
+  energy_global_flag = 1;
+  virial_global_flag = 1;
   thermo_energy = 1;
   thermo_virial = 1;
   extscalar = 1;
@@ -61,7 +62,7 @@ FixPythonInvoke::FixPythonInvoke(LAMMPS *lmp, int narg, char **arg) :
   }
   // RS call min_post_force in addition
   selected_callback |= MIN_POST_FORCE;
-  selected_callback |= THERMO_ENERGY;
+  // selected_callback |= THERMO_ENERGY;
 
   // get Python function
   PyUtils::GIL lock;
