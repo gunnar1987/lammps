@@ -47,6 +47,8 @@
 #include <windows.h>
 #endif
 
+#include <cstdlib>
+
 /*! \file utils.cpp */
 
 /*

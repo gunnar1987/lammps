@@ -2492,6 +2492,7 @@ void lammps_gather_atoms_subset(void *handle, char *name, int type, int count,
    see scatter_atoms_subset() to scatter data for some (or all) atoms, unordered
    name = desired quantity, e.g. x or charge
    type = 0 for integer values, 1 for double values
+            RS: 2 for double values to be added instead of just replacing the orig. value
    count = # of per-atom values, e.g. 1 for type or charge, 3 for x or f
      use count = 3 with "image" for xyz to be packed into single image flag
    data = atom-based values in 1d data, ordered by count, then by atom ID
@@ -2587,11 +2588,22 @@ void lammps_scatter_atoms(void *handle, char *name, int type, int count, void *d
             vector[m] = dptr[i];
 
       } else {
-        for (i = 0; i < natoms; i++) {
-          if ((m = lmp->atom->map(i+1)) >= 0) {
-            offset = count*i;
-            for (j = 0; j < count; j++)
-              array[m][j] = dptr[offset++];
+        if (type == 1) {
+          for (i = 0; i < natoms; i++) {
+            if ((m = lmp->atom->map(i+1)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] = dptr[offset++];
+            }
+          }
+        } else {
+          // RS add instead of replacing values in array (for type >1)
+          for (i = 0; i < natoms; i++) {
+            if ((m = lmp->atom->map(i+1)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] += dptr[offset++];
+            }
           }
         }
       }
@@ -2608,6 +2620,7 @@ void lammps_scatter_atoms(void *handle, char *name, int type, int count, void *d
    see scatter_atoms() to scatter data for all atoms, ordered by consecutive IDs
    name = desired quantity, e.g. x or charge
    type = 0 for integer values, 1 for double values
+            RS: 2 for double values to be added instead of just replacing the orig. value
    count = # of per-atom values, e.g. 1 for type or charge, 3 for x or f
      use count = 3 with "image" for xyz to be packed into single image flag
    ndata = # of atoms in ids and data (could be all atoms)
@@ -2712,12 +2725,24 @@ void lammps_scatter_atoms_subset(void *handle, char *name, int type, int count,
         }
 
       } else {
-        for (i = 0; i < ndata; i++) {
-          id = ids[i];
-          if ((m = lmp->atom->map(id)) >= 0) {
-            offset = count*i;
-            for (j = 0; j < count; j++)
-              array[m][j] = dptr[offset++];
+        if (type == 1) {
+          for (i = 0; i < ndata; i++) {
+            id = ids[i];
+            if ((m = lmp->atom->map(id)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] = dptr[offset++];
+            }
+          }
+        } else {
+          // RS add instead of replacing values in array (for type >1)
+          for (i = 0; i < ndata; i++) {
+            id = ids[i];
+            if ((m = lmp->atom->map(id)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] += dptr[offset++];
+            }
           }
         }
       }
@@ -3590,6 +3615,7 @@ void lammps_gather_subset(void *handle, char *name,
          "d2_name" or "i2_name" for fix property/atom arrays with count > 1
          will return error if fix/compute isn't atom-based
   type = 0 for integer values, 1 for double values
+           RS: 2 for double values to be added instead of just replacing the orig. value
   count = # of per-atom values, e.g. 1 for type or charge, 3 for x or f
     use count = 3 with "image" if want single image flag unpacked into xyz
   return atom-based values in 1d data, ordered by count, then by atom ID
@@ -3787,11 +3813,22 @@ void lammps_scatter(void *handle, char *name, int type, int count, void *data)
             vector[m] = dptr[i];
 
       } else {
-        for (i = 0; i < natoms; i++) {
-          if ((m = lmp->atom->map(i+1)) >= 0) {
-            offset = count*i;
-            for (j = 0; j < count; j++)
-              array[m][j] = dptr[offset++];
+        if (type == 1) {
+          for (i = 0; i < natoms; i++) {
+            if ((m = lmp->atom->map(i+1)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] = dptr[offset++];
+            }
+          }
+        } else {
+          // RS add instead of replacing values in array (for type >1)
+          for (i = 0; i < natoms; i++) {
+            if ((m = lmp->atom->map(i+1)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] += dptr[offset++];
+            }
           }
         }
       }
@@ -3812,6 +3849,7 @@ void lammps_scatter(void *handle, char *name, int type, int count, void *data)
           "f_fix", "c_compute" for fixes / computes
           will return error if fix/compute doesn't isn't atom-based
    type = 0 for integer values, 1 for double values
+      RS: 2 for double values to be added instead of just replacing the orig. value
    count = # of per-atom values, e.g. 1 for type or charge, 3 for x or f
      use count = 3 with "image" for xyz to be packed into single image flag
    ndata = # of atoms in ids and data (could be all atoms)
@@ -4017,12 +4055,24 @@ void lammps_scatter_subset(void *handle, char *name,int type, int count,
         }
 
       } else {
-        for (i = 0; i < ndata; i++) {
-          id = ids[i];
-          if ((m = lmp->atom->map(id)) >= 0) {
-            offset = count*i;
-            for (j = 0; j < count; j++)
-              array[m][j] = dptr[offset++];
+        if (type == 1) {
+          for (i = 0; i < ndata; i++) {
+            id = ids[i];
+            if ((m = lmp->atom->map(id)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] = dptr[offset++];
+            }
+          }
+        } else {
+          // RS add instead of replacing values in array (for type >1)
+          for (i = 0; i < ndata; i++) {
+            id = ids[i];
+            if ((m = lmp->atom->map(id)) >= 0) {
+              offset = count*i;
+              for (j = 0; j < count; j++)
+                array[m][j] += dptr[offset++];
+            }
           }
         }
       }

@@ -38,6 +38,14 @@ FixPythonInvoke::FixPythonInvoke(LAMMPS *lmp, int narg, char **arg) :
 {
   if (narg != 6) error->all(FLERR,"Illegal fix python/invoke command");
 
+  // RS this needs to be tested ... anything missing? is virial ok? 
+  //          in fix_external thermo_energy is not set .. why?
+  scalar_flag = 1;
+  virial_flag = 1;
+  thermo_energy = 1;
+  thermo_virial = 1;
+  extscalar = 1;
+
   nevery = utils::inumeric(FLERR,arg[3],false,lmp);
   if (nevery <= 0) error->all(FLERR,"Illegal fix python/invoke command");
 
@@ -51,6 +59,9 @@ FixPythonInvoke::FixPythonInvoke(LAMMPS *lmp, int narg, char **arg) :
   } else {
     error->all(FLERR,"Unsupported callback name for fix python/invoke");
   }
+  // RS call min_post_force in addition
+  selected_callback |= MIN_POST_FORCE;
+  selected_callback |= THERMO_ENERGY;
 
   // get Python function
   PyUtils::GIL lock;
@@ -120,5 +131,27 @@ void FixPythonInvoke::post_force(int vflag)
     error->all(FLERR,"Fix python/invoke post_force() method failed");
   }
 
+  //RS use result as energy value
+  py_energy = PyFloat_AsDouble(result);
+  //RS end
+
   Py_CLEAR(result);
+}
+
+/* ---------------------------------------------------------------------- */
+/*  RS .. add callback for minimize                                       */
+
+void FixPythonInvoke::min_setup(int vflag)
+{
+  post_force(vflag);
+}
+
+void FixPythonInvoke::min_post_force(int vflag)
+{
+  post_force(vflag);
+}
+
+double FixPythonInvoke::compute_scalar()
+{
+  return py_energy;
 }

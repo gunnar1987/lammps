@@ -39,7 +39,18 @@ using namespace ReaxFF;
 FixReaxFFBonds::FixReaxFFBonds(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg)
 {
-  if (narg != 5) error->all(FLERR,"Illegal fix reaxff/bonds command");
+  //RS additional options for mfp5 dump of bonds
+  nbondmax = 0;
+  
+  if (narg == 7) {
+    if (strcmp(arg[5],"pdlp") != 0) error->all(FLERR, "Illegal fix reaxff/bonds command 1");
+    nbondmax = utils::inumeric(FLERR,arg[6],false,lmp);
+    if (nbondmax < 0 )
+      error->all(FLERR,"Illegal fix reaxff/bonds command 2");
+
+  }
+  //RS end -> plus "else" in next line
+  else if (narg != 5) error->all(FLERR,"Illegal fix reaxff/bonds command");
 
   MPI_Comm_rank(world,&me);
   MPI_Comm_size(world,&nprocs);
@@ -259,6 +270,10 @@ void FixReaxFFBonds::RecvBuffer(double *buf, int nbuf, int nbuf_local,
   double cutof3 = reaxff->api->control->bg_cut;
   MPI_Request irequest, irequest2;
 
+  //RS
+  int bi, nj;
+  //RS end
+
   if (me == 0) {
     fprintf(fp,"# Timestep " BIGINT_FORMAT " \n",ntimestep);
     fprintf(fp,"# \n");
@@ -270,6 +285,17 @@ void FixReaxFFBonds::RecvBuffer(double *buf, int nbuf, int nbuf_local,
     fprintf(fp,"# id type nb id_1...id_nb mol bo_1...bo_nb abo nlp q \n");
   }
 
+  // RS: init the complete copy buffer for bondord and bondtab
+  if (me == 0) {
+    for (i = 0; i < nbondmax; i++){
+      bondtab[i*2]   = 0;
+      bondtab[i*2+1] = 0;
+      bondord[i]     = -1.0;
+    }
+  }
+  
+  bi = 0;  
+  //RS end
   j = 2;
   if (me == 0) {
     for (inode = 0; inode < nprocs; inode ++) {
@@ -306,6 +332,26 @@ void FixReaxFFBonds::RecvBuffer(double *buf, int nbuf, int nbuf_local,
         }
         j += (1+numbonds);
         fprintf(fp,"%14.3f%14.3f%14.3f\n",sbotmp,nlptmp,avqtmp);
+
+        //RS write bonds to bontab/bondord for mfp5 dumping if nbondmax >0
+        if (nbondmax > 0) {
+          // need to get nj to point to the right entry in buf again
+          nj = j - 2 - (2*numbonds);
+          for (k = 0; k < numbonds; k++) {
+            jtag = static_cast<tagint> (buf[nj+k]);
+            // save only if jtag > itag and if bi smaller than nbondmax
+            if (jtag > itag && bi<nbondmax){
+              bondtab[bi*2]   = itag;
+              bondtab[bi*2+1] = jtag;
+              bondord[bi]     = buf[nj+1+numbonds+k];
+
+              //printf("DEBUG §§ %5d %5d %5d %12.3f\n", bi, itag, jtag, bondord[bi]);
+
+              bi += 1;
+            }
+          }
+        }
+        //RS end
       }
     }
   } else {
@@ -333,6 +379,12 @@ void FixReaxFFBonds::destroy()
   memory->destroy(abo);
   memory->destroy(neighid);
   memory->destroy(numneigh);
+  //RS delete bondtab only on master
+  if (me == 0) {
+    delete [] bondtab;
+    delete [] bondord;
+  }
+  //RS end
 }
 
 /* ---------------------------------------------------------------------- */
@@ -342,6 +394,12 @@ void FixReaxFFBonds::allocate()
   memory->create(abo,nmax,MAXREAXBOND,"reaxff/bonds:abo");
   memory->create(neighid,nmax,MAXREAXBOND,"reaxff/bonds:neighid");
   memory->create(numneigh,nmax,"reaxff/bonds:numneigh");
+  //RS allocate bondtab only on master 
+  if (me==0){
+    bondtab = new int[nbondmax*2];
+    bondord = new double[nbondmax];
+  }
+  //RS end
 }
 
 /* ---------------------------------------------------------------------- */

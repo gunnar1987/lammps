@@ -35,6 +35,12 @@ class FixReaxFFBonds : public Fix {
   void setup(int);
   void end_of_step();
 
+  //RS -> for writing reaxff bond info to mfp5 file
+  int    *bondtab;
+  double *bondord;
+  int     nbondmax;
+  //RS end 
+
  protected:
   int me, nprocs, nmax, ntypes, maxsize;
   int *numneigh;
