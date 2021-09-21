@@ -41,10 +41,11 @@ FixPythonInvoke::FixPythonInvoke(LAMMPS *lmp, int narg, char **arg) :
   // RS this needs to be tested ... anything missing? is virial ok? 
   //          in fix_external thermo_energy is not set .. why?
   scalar_flag = 1;
+  global_freq = 1;
   energy_global_flag = 1;
-  virial_global_flag = 1;
+  // virial_global_flag = 1;
   thermo_energy = 1;
-  thermo_virial = 1;
+  // thermo_virial = 1;
   extscalar = 1;
 
   nevery = utils::inumeric(FLERR,arg[3],false,lmp);
@@ -83,6 +84,7 @@ FixPythonInvoke::FixPythonInvoke(LAMMPS *lmp, int narg, char **arg) :
   }
 
   lmpPtr = PY_VOID_POINTER(lmp);
+  py_energy = 0.0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -134,6 +136,7 @@ void FixPythonInvoke::post_force(int vflag)
 
   //RS use result as energy value
   py_energy = PyFloat_AsDouble(result);
+  // printf("DEBUG DEBUG py_energy is %12.6f\n", py_energy);
   //RS end
 
   Py_CLEAR(result);
