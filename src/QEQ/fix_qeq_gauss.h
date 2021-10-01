@@ -35,6 +35,8 @@ class FixQEqGauss : public FixQEq {
   void init_matvec();
   void compute_H();
   double calculate_H(double, double, double);
+  double calculate_H_wolf(double, double, double);
+  double calculate_H_dsf(double, double, double);
 
 };
 }

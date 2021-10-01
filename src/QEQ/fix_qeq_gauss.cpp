@@ -126,6 +126,8 @@ void FixQEqGauss::compute_H()
 
   double dx, dy, dz, r_sqr, r;
   double zei, zej;
+  //DEBUG BABAK
+  double temp_H;
 
   int *type = atom->type;
   double **x = atom->x;
@@ -157,21 +159,24 @@ void FixQEqGauss::compute_H()
       dy = x[j][1] - x[i][1];
       dz = x[j][2] - x[i][2];
       r_sqr = dx*dx + dy*dy + dz*dz;
-
       if (r_sqr > cutoff_sq) continue;
 
       r = sqrt(r_sqr);
       H.jlist[m_fill] = j;
-      H.val[m_fill] = calculate_H(zei, zej, r);
+      //DEBUG BABAK
+      temp_H = calculate_H_dsf(zei, zej, r);
+      H.val[m_fill] = temp_H;
       m_fill++;
+      //printf("DEBUG temp_H %5d %5d %12.6f %12.6f %12.6f %12.6f\n", i, j, 1.0/(2.0*zei), 1.0/(2.0*zej), r, temp_H);
+      //printf("DEBUG temp_H %5d %5d %12.6f %12.6f\n", i, atom->map(atom->tag[j]), r, temp_H);
   
     }
     H.numnbrs[i] = m_fill - H.firstnbr[i];
   }
 
   // DEBUG BABAK
-  for (i=0; i <= 30; ++i)
-    printf("DEBUG H_mat: %1d %10.5f\n", H.jlist[i], H.val[i]);
+  //for (i=0; i <= 30; ++i)
+  //  printf("DEBUG H_mat: %1d %10.5f\n", H.jlist[i], H.val[i]);
   if (m_fill >= H.m) {
     char str[128];
     sprintf(str,"H matrix size has been exceeded: m_fill=%d H.m=%d\n",
@@ -194,14 +199,58 @@ double FixQEqGauss::calculate_H(double zei, double zej, double r)
   double sigi = 1.0/(2.0*zei);
   double sigj = 1.0/(2.0*zej);
   double sigij = sqrt(sigi*sigi+sigj*sigj);
-  double erfrsig = erf(r/sigij);
+  double erfrsiginv = erf(r/sigij);
   double qqrd2e = force->qqrd2e;
   double etmp;
   
-  etmp = erfrsig/r;
+  etmp = erfrsiginv/r;
   // DEBUG BABAK
-  printf("DEBUG sigi: %10.5f, sigj: %10.5f, r: %10.5f, etmp: %10.5f, Jij: %10.5f\n", sigi, sigj, r, etmp, 0.5*qqrd2e*etmp);
+  //printf("DEBUG sigi: %10.5f, sigj: %10.5f, r: %10.5f, etmp: %10.5f, Jij: %10.5f\n", sigi, sigj, r, etmp, 0.5*qqrd2e*etmp);
   
-  //return 0.5*etmp;
   return 0.5*qqrd2e*etmp;
+}
+
+/* ---------------------------------------------------------------------- */
+
+double FixQEqGauss::calculate_H_wolf(double zei, double zej, double r)
+{
+  double sigi = 1.0/(2.0*zei);
+  double sigj = 1.0/(2.0*zej);
+  double sigij = sqrt(sigi*sigi+sigj*sigj);
+  double siginv = 1.0/sigij;
+  double rinv = 1.0/r;
+  double rcut = sqrt(cutoff_sq);
+  double rcutinv = 1.0/rcut;
+  double erfrsiginv = erf(r*siginv);
+  double erfrcutsiginv = erf(rcut*siginv);
+  double qqrd2e = force->qqrd2e;
+  double etmp;
+  
+  etmp = erfrsiginv*rinv-erfrcutsiginv*rcutinv;
+  
+  return 0.5*qqrd2e*etmp;
+}
+/* ---------------------------------------------------------------------- */
+
+double FixQEqGauss::calculate_H_dsf(double zei, double zej, double r)
+{
+  double sigi = 1.0/(2.0*zei);
+  double sigj = 1.0/(2.0*zej);
+  double sigij = sqrt(sigi*sigi+sigj*sigj);
+  double siginv = 1.0/sigij;
+  double rinv = 1.0/r;
+  double rcut = sqrt(cutoff_sq);
+  double rcutinv = 1.0/rcut;
+  double erfrsiginv = erf(r*siginv);
+  double erfrcutsiginv = erf(rcut*siginv);
+  double preexp = 2.0*siginv/sqrt(MY_PI);
+  double expterm = exp(-siginv*siginv*cutoff_sq);
+  double qqrd2e = force->qqrd2e;
+  double etmp1, etmp2, etmp3;
+  
+  etmp1 = erfrsiginv*rinv-erfrcutsiginv*rcutinv;
+  etmp2 = erfrcutsiginv*rcutinv*rcutinv+preexp*expterm*rcutinv;
+  etmp3 = etmp1+etmp2*(r-rcut);
+  
+  return 0.5*qqrd2e*etmp3;
 }
