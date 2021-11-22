@@ -43,7 +43,7 @@ FixReaxFFBonds::FixReaxFFBonds(LAMMPS *lmp, int narg, char **arg) :
   nbondmax = 0;
   
   if (narg == 7) {
-    if (strcmp(arg[5],"pdlp") != 0) error->all(FLERR, "Illegal fix reaxff/bonds command 1");
+    if (strcmp(arg[5],"mfp5") != 0) error->all(FLERR, "Illegal fix reaxff/bonds command 1");
     nbondmax = utils::inumeric(FLERR,arg[6],false,lmp);
     if (nbondmax < 0 )
       error->all(FLERR,"Illegal fix reaxff/bonds command 2");
