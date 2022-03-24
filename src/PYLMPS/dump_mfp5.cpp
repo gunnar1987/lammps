@@ -121,7 +121,7 @@ DumpMFP5::DumpMFP5(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
         error->all(FLERR, "Illegal dump mfp5 command: stage name argument repeated");
       }
       iarg+=2;
-    } else if (strcmp(arg[iarg], "xyz_img")==0) {
+    } else if (strcmp(arg[iarg], "img")==0) {
       if (every_xyz<0) error->all(FLERR, "Illegal dump mfp5 command");
       iarg+=1;
       every_image = every_xyz;
@@ -183,6 +183,7 @@ DumpMFP5::DumpMFP5(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
   if (every_restart > 0) {
     if (every_xyz <0) size_one+=domain->dimension;
     if (every_vel <0) size_one+=domain->dimension;
+    if (every_image <0) size_one+=domain->dimension; // RS add image to restart info (we mgiht switch this off if nonperiodic)
   }
 
   // if bond are written get corresponding fix
@@ -212,7 +213,7 @@ DumpMFP5::DumpMFP5(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
     //printf ("dump:xyz allocated\n");
   }
   if (every_image>=0) {
-    memory->create(dump_img,domain->dimension*natoms,"dump:xyz_img");
+    memory->create(dump_img,domain->dimension*natoms,"dump:img");
     //printf ("dump:xyz_img allocated\n");
   }
   if ((every_vel>=0) || (every_restart>=0)) {
@@ -282,7 +283,8 @@ DumpMFP5::~DumpMFP5()
   }  if (every_restart>=0 && me==0) {
     H5Dclose(rest_xyz_dset);    
     H5Dclose(rest_vel_dset);    
-    H5Dclose(rest_cell_dset);    
+    H5Dclose(rest_cell_dset);
+    H5Dclose(rest_img_dset);    
   }
 
   if (me==0){
@@ -343,7 +345,7 @@ void DumpMFP5::openfile()
       //printf("mfp5 xyz dset opened\n");
     }
     if (every_image>0) {
-      img_dset    = H5Dopen(traj_group, "imgidx", H5P_DEFAULT);
+      img_dset    = H5Dopen(traj_group, "img", H5P_DEFAULT);
       //printf("mfp5 img dset opened\n");
     }
     if (every_vel>0) {
@@ -375,6 +377,7 @@ void DumpMFP5::openfile()
       rest_xyz_dset = H5Dopen(restart_group, "xyz", H5P_DEFAULT);
       rest_vel_dset = H5Dopen(restart_group, "vel", H5P_DEFAULT);
       rest_cell_dset = H5Dopen(restart_group, "cell", H5P_DEFAULT);
+      rest_img_dset = H5Dopen(restart_group, "img", H5P_DEFAULT);
       //printf("mfp5 restart dsets opened\n");
     }
 
@@ -560,6 +563,16 @@ void DumpMFP5::write_frame()
       }
     }
   }
+  if (every_image>0) {
+    if (local_step % (every_image*every_dump) == 0) {
+      if (dump_count == 0) {
+       statcode = write_data_int(img_dset, 3, dump_img); 
+      }
+      else {
+       statcode = append_data_int(img_dset, 3, dump_img); 
+      }
+    }
+  }
   if (every_cell>0 && local_step % (every_cell*every_dump) == 0) {
     if (dump_count == 0) {
       statcode = write_data(cell_dset, 3, cell); 
@@ -617,6 +630,7 @@ void DumpMFP5::write_frame()
       statcode = write_data(rest_xyz_dset, 2, dump_xyz);
       statcode = write_data(rest_vel_dset, 2, dump_vel);
       statcode = write_data(rest_cell_dset, 2, cell);
+      statcode = write_data_int(rest_img_dset, 2, dump_img);
     }
   }
 

@@ -44,7 +44,7 @@ class DumpMFP5 : public Dump {
   int unwrap_flag;            // 1 if atom coords are unwrapped, 0 if no
   hid_t mfp5file;
   hid_t stage_group, traj_group, restart_group;
-  hid_t rest_xyz_dset, rest_vel_dset, rest_cell_dset;
+  hid_t rest_xyz_dset, rest_vel_dset, rest_cell_dset, rest_img_dset;
 
   hid_t xyz_dset;
   hid_t img_dset;
