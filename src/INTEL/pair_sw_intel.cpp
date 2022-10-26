@@ -21,11 +21,10 @@
 #include "atom.h"
 #include "comm.h"
 #include "error.h"
+#include "force.h"
 #include "memory.h"
 #include "modify.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
-#include "neighbor.h"
 #include "neighbor.h"
 #include "suffix.h"
 
@@ -61,12 +60,6 @@ using namespace LAMMPS_NS;
 PairSWIntel::PairSWIntel(LAMMPS *lmp) : PairSW(lmp)
 {
   suffix_flag |= Suffix::INTEL;
-}
-
-/* ---------------------------------------------------------------------- */
-
-PairSWIntel::~PairSWIntel()
-{
 }
 
 /* ---------------------------------------------------------------------- */
@@ -339,7 +332,7 @@ void PairSWIntel::eval(const int offload, const int vflag,
           int jtype, ijtype;
           if (!ONETYPE) {
             jtype = x[j].w;
-            ijtype = itype_offset + jtype;
+            ijtype = IP_PRE_dword_index(itype_offset + jtype);
             cutsq = p2[ijtype].cutsq;
           }
           const flt_t rsq1 = delx * delx + dely * dely + delz * delz;
@@ -385,7 +378,7 @@ void PairSWIntel::eval(const int offload, const int vflag,
           if (EFLAG) fjtmp = (acc_t)0.0;
           int ijtype;
 
-          if (!ONETYPE) ijtype = tjtype[jj] + itype_offset;
+          if (!ONETYPE) ijtype = IP_PRE_dword_index(tjtype[jj] + itype_offset);
           const flt_t rsq1 = trsq[jj];
 
           const flt_t rinvsq1 = (flt_t)1.0 / rsq1;
@@ -466,8 +459,8 @@ void PairSWIntel::eval(const int offload, const int vflag,
             int iktype, ijktype;
             if (!ONETYPE) {
               iktype = tjtype[kk];
-              ijktype = ijkoff + iktype;
-              iktype += itype_offset;
+              ijktype = IP_PRE_dword_index(ijkoff + iktype);
+              iktype = IP_PRE_dword_index(iktype + itype_offset);
               cut = p2[iktype].cut;
               sigma_gamma = p2[iktype].sigma_gamma;
               costheta = p3[ijktype].costheta;
@@ -527,7 +520,7 @@ void PairSWIntel::eval(const int offload, const int vflag,
               }
             }
           } // for kk
-          const int j = tj[jj];
+          const int j = IP_PRE_dword_index(tj[jj]);
           f[j].x += fjxtmp;
           f[j].y += fjytmp;
           f[j].z += fjztmp;
@@ -574,7 +567,7 @@ void PairSWIntel::eval(const int offload, const int vflag,
   if (EFLAG || vflag)
     fix->add_result_array(f_start, ev_global, offload, eatom, 0, vflag);
   else
-    fix->add_result_array(f_start, 0, offload);
+    fix->add_result_array(f_start, nullptr, offload);
 }
 
 #else
@@ -1108,16 +1101,16 @@ void PairSWIntel::allocate()
 
 void PairSWIntel::init_style()
 {
+  // there is no support for skipping threebody loops (yet)
+  bool tmp_threebody = skip_threebody_flag;
+  skip_threebody_flag = false;
   PairSW::init_style();
-  neighbor->find_request(this)->intel = 1;
+  skip_threebody_flag = tmp_threebody;
 
   map[0] = map[1];
 
-  int ifix = modify->find_fix("package_intel");
-  if (ifix < 0)
-    error->all(FLERR,
-               "The 'package intel' command is required for /intel styles");
-  fix = static_cast<FixIntel *>(modify->fix[ifix]);
+  fix = static_cast<FixIntel *>(modify->get_fix_by_id("package_intel"));
+  if (!fix) error->all(FLERR, "The 'package intel' command is required for /intel styles");
 
   fix->pair_init_check(true);
 

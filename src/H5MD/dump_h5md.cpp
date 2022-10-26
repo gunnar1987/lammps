@@ -16,22 +16,23 @@
    Contributing author: Pierre de Buyl (KU Leuven)
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstdio>
-
-#include <cstring>
-#include <climits>
-#include "ch5md.h"
 #include "dump_h5md.h"
-#include "domain.h"
+
 #include "atom.h"
-#include "update.h"
-#include "group.h"
-#include "output.h"
+#include "domain.h"
 #include "error.h"
 #include "force.h"
+#include "group.h"
 #include "memory.h"
+#include "output.h"
+#include "update.h"
 #include "version.h"
+
+#include "ch5md.h"
+
+#include <climits>
+#include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 
@@ -72,23 +73,24 @@ DumpH5MD::DumpH5MD(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
   format_default = nullptr;
   flush_flag = 0;
   unwrap_flag = 0;
-  datafile_from_dump = -1;
-  author_name=nullptr;
+  other_dump = nullptr;
+  author_name = nullptr;
 
   every_dump = utils::inumeric(FLERR,arg[3],false,lmp);
   every_position = every_image = -1;
   every_velocity = every_force = every_species = -1;
   every_charge = -1;
 
-  do_box=true;
-  create_group=true;
+  do_box = true;
+  create_group = true;
 
   bool box_is_set, create_group_is_set;
   box_is_set = create_group_is_set = false;
-  int iarg=5;
+  int iarg = 5;
   int n_parsed, default_every;
-  size_one=0;
-  if (every_dump==0) default_every=0; else default_every=1;
+  size_one = 0;
+  if (every_dump==0) default_every=0;
+  else default_every=1;
 
   while (iarg<narg) {
     if (strcmp(arg[iarg], "position")==0) {
@@ -139,11 +141,8 @@ DumpH5MD::DumpH5MD(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
       }
       if (box_is_set||create_group_is_set)
         error->all(FLERR, "Cannot set file_from in dump h5md after box or create_group");
-      int idump;
-      for (idump = 0; idump < output->ndump; idump++)
-        if (strcmp(arg[iarg+1],output->dump[idump]->id) == 0) break;
-      if (idump == output->ndump) error->all(FLERR,"Cound not find dump_modify ID");
-      datafile_from_dump = idump;
+      other_dump = dynamic_cast<DumpH5MD *>(output->get_dump_by_id(arg[iarg+1]));
+      if (!other_dump) error->all(FLERR,"Cound not find dump_modify H5MD dump ID {}", arg[iarg+1]);
       do_box=false;
       create_group=false;
       iarg+=2;
@@ -152,33 +151,21 @@ DumpH5MD::DumpH5MD(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
         error->all(FLERR, "Invalid number of arguments in dump h5md");
       }
       box_is_set = true;
-      if (strcmp(arg[iarg+1], "yes")==0)
-        do_box=true;
-      else if (strcmp(arg[iarg+1], "no")==0)
-        do_box=false;
-      else
-        error->all(FLERR, "Illegal dump h5md command");
+      do_box = utils::logical(FLERR,arg[iarg+1],false,lmp) == 1;
       iarg+=2;
     } else  if (strcmp(arg[iarg], "create_group")==0) {
       if (iarg+1>=narg) {
         error->all(FLERR, "Invalid number of arguments in dump h5md");
       }
       create_group_is_set = true;
-      if (strcmp(arg[iarg+1], "yes")==0)
-        create_group=true;
-      else if (strcmp(arg[iarg+1], "no")==0) {
-        create_group=false;
-      }
-      else
-        error->all(FLERR, "Illegal dump h5md command");
+      create_group = utils::logical(FLERR,arg[iarg+1],false,lmp) == 1;
       iarg+=2;
     } else if (strcmp(arg[iarg], "author")==0) {
       if (iarg+1>=narg) {
         error->all(FLERR, "Invalid number of arguments in dump h5md");
       }
-      if (author_name==nullptr) {
-        author_name = new char[strlen(arg[iarg])+1];
-        strcpy(author_name, arg[iarg+1]);
+      if (!author_name) {
+        author_name = utils::strdup(arg[iarg+1]);
       } else {
         error->all(FLERR, "Illegal dump h5md command: author argument repeated");
       }
@@ -191,6 +178,7 @@ DumpH5MD::DumpH5MD(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
   // allocate global array for atom coords
 
   bigint n = group->count(igroup);
+  if ((bigint) domain->dimension*n > MAXSMALLINT) error->all(FLERR,"Too many atoms for dump h5md");
   natoms = static_cast<int> (n);
 
   if (every_position>=0)
@@ -271,7 +259,7 @@ void DumpH5MD::openfile()
   }
 
   if (me == 0) {
-    if (datafile_from_dump<0) {
+    if (!other_dump) {
       if (author_name==nullptr) {
         datafile = h5md_create_file(filename, "N/A", nullptr, "lammps", LAMMPS_VERSION);
       } else {
@@ -305,8 +293,6 @@ void DumpH5MD::openfile()
         h5md_write_string_attribute(particles_data.group, "charge", "type", "effective");
       }
     } else {
-      DumpH5MD* other_dump;
-      other_dump=(DumpH5MD*)output->dump[datafile_from_dump];
       datafile = other_dump->datafile;
       group_name_length = strlen(group->names[igroup]);
       group_name = new char[group_name_length];
@@ -343,13 +329,6 @@ void DumpH5MD::openfile()
     delete [] boundary[i];
   }
 
-}
-
-/* ---------------------------------------------------------------------- */
-
-void DumpH5MD::write_header(bigint /* nbig */)
-{
-  return;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -470,9 +449,7 @@ int DumpH5MD::modify_param(int narg, char **arg)
 {
   if (strcmp(arg[0],"unwrap") == 0) {
     if (narg < 2) error->all(FLERR,"Illegal dump_modify command");
-    if (strcmp(arg[1],"yes") == 0) unwrap_flag = 1;
-    else if (strcmp(arg[1],"no") == 0) unwrap_flag = 0;
-    else error->all(FLERR,"Illegal dump_modify command");
+    unwrap_flag = utils::logical(FLERR, arg[1], false, lmp);
     return 2;
   }
   return 0;

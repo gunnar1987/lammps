@@ -20,10 +20,12 @@
 
 #include "atom.h"
 #include "comm.h"
+#include "domain.h"
 #include "error.h"
-#include "molecule.h"
 #include "neigh_list.h"
 #include "neighbor.h"
+
+#include <cmath>
 
 using namespace LAMMPS_NS;
 
@@ -116,7 +118,7 @@ void NPairFullBinGhostIntel::fbi(const int offload, NeighList * list,
 
   const ATOM_T * _noalias const x = buffers->get_x();
   int * _noalias const intel_list = buffers->intel_list(list);
-  int ** _noalias const firstneigh = list->firstneigh;
+  int ** _noalias const firstneigh = list->firstneigh;  // NOLINT
   const int e_nall = nall_t;
 
   const int molecular = atom->molecular;
@@ -368,7 +370,7 @@ void NPairFullBinGhostIntel::fbi(const int offload, NeighList * list,
           #pragma vector aligned
           #endif
           for (int u = 0; u < ncount; u++) {
-            const int j = tj[u];
+            const int j = IP_PRE_dword_index(tj[u]);
             tx[u] = x[j].x;
             ty[u] = x[j].y;
             tz[u] = x[j].z;

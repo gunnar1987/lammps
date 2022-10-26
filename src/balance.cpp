@@ -26,7 +26,7 @@
 #include "neighbor.h"
 #include "comm.h"
 #include "domain.h"
-#include "fix_store.h"
+#include "fix_store_peratom.h"
 #include "imbalance.h"
 #include "imbalance_group.h"
 #include "imbalance_neigh.h"
@@ -78,26 +78,26 @@ Balance::~Balance()
   memory->destroy(proccost);
   memory->destroy(allproccost);
 
-  delete [] user_xsplit;
-  delete [] user_ysplit;
-  delete [] user_zsplit;
+  delete[] user_xsplit;
+  delete[] user_ysplit;
+  delete[] user_zsplit;
 
   if (shift_allocate) {
-    delete [] bdim;
-    delete [] onecost;
-    delete [] allcost;
-    delete [] sum;
-    delete [] target;
-    delete [] lo;
-    delete [] hi;
-    delete [] losum;
-    delete [] hisum;
+    delete[] bdim;
+    delete[] onecost;
+    delete[] allcost;
+    delete[] sum;
+    delete[] target;
+    delete[] lo;
+    delete[] hi;
+    delete[] losum;
+    delete[] hisum;
   }
 
   delete rcb;
 
   for (int i = 0; i < nimbalance; i++) delete imbalances[i];
-  delete [] imbalances;
+  delete[] imbalances;
 
   // check nfix in case all fixes have already been deleted
 
@@ -143,7 +143,7 @@ void Balance::command(int narg, char **arg)
         if (1 + procgrid[0]-1 > narg)
           error->all(FLERR,"Illegal balance command");
         xflag = USER;
-        delete [] user_xsplit;
+        delete[] user_xsplit;
         user_xsplit = new double[procgrid[0]+1];
         user_xsplit[0] = 0.0;
         iarg++;
@@ -163,7 +163,7 @@ void Balance::command(int narg, char **arg)
         if (1 + procgrid[1]-1 > narg)
           error->all(FLERR,"Illegal balance command");
         yflag = USER;
-        delete [] user_ysplit;
+        delete[] user_ysplit;
         user_ysplit = new double[procgrid[1]+1];
         user_ysplit[0] = 0.0;
         iarg++;
@@ -183,7 +183,7 @@ void Balance::command(int narg, char **arg)
         if (1 + procgrid[2]-1 > narg)
           error->all(FLERR,"Illegal balance command");
         zflag = USER;
-        delete [] user_zsplit;
+        delete[] user_zsplit;
         user_zsplit = new double[procgrid[2]+1];
         user_zsplit[0] = 0.0;
         iarg++;
@@ -196,8 +196,8 @@ void Balance::command(int narg, char **arg)
       if (style != -1) error->all(FLERR,"Illegal balance command");
       if (iarg+4 > narg) error->all(FLERR,"Illegal balance command");
       style = SHIFT;
-      if (strlen(arg[iarg+1]) > 3) error->all(FLERR,"Illegal balance command");
-      strcpy(bstr,arg[iarg+1]);
+      if (strlen(arg[iarg+1]) > BSTR_SIZE) error->all(FLERR,"Illegal balance command");
+      strncpy(bstr,arg[iarg+1],BSTR_SIZE+1);
       nitermax = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
       if (nitermax <= 0) error->all(FLERR,"Illegal balance command");
       stopthresh = utils::numeric(FLERR,arg[iarg+3],false,lmp);
@@ -259,7 +259,7 @@ void Balance::command(int narg, char **arg)
   // must reset atom map after exchange() since it clears it
 
   MPI_Barrier(world);
-  double start_time = MPI_Wtime();
+  double start_time = platform::walltime();
 
   lmp->init();
 
@@ -355,7 +355,7 @@ void Balance::command(int narg, char **arg)
   // set disable = 0, so weights migrate with atoms for imbfinal calculation
 
   if (domain->triclinic) domain->x2lamda(atom->nlocal);
-  Irregular *irregular = new Irregular(lmp);
+  auto irregular = new Irregular(lmp);
   if (wtflag) fixstore->disable = 0;
   if (style == BISECTION) irregular->migrate_atoms(1,1,rcb->sendproc);
   else irregular->migrate_atoms(1);
@@ -386,7 +386,7 @@ void Balance::command(int narg, char **arg)
 
   if (me == 0) {
     std::string mesg = fmt::format(" rebalancing time: {:.3f} seconds\n",
-                                   MPI_Wtime()-start_time);
+                                   platform::walltime()-start_time);
     mesg += fmt::format("  iteration count = {}\n",niter);
     for (int i = 0; i < nimbalance; ++i) mesg += imbalances[i]->info();
     mesg += fmt::format("  initial/final maximal load/proc = {:.8} {:.8}\n"
@@ -491,16 +491,14 @@ void Balance::options(int iarg, int narg, char **arg)
 
 void Balance::weight_storage(char *prefix)
 {
-  std::string cmd = "";
+  std::string cmd;
 
   if (prefix) cmd = prefix;
   cmd += "IMBALANCE_WEIGHTS";
 
-  int ifix = modify->find_fix(cmd);
-  if (ifix < 1) {
-    cmd += " all STORE peratom 0 1";
-    fixstore = (FixStore *) modify->add_fix(cmd);
-  } else fixstore = (FixStore *) modify->fix[ifix];
+  fixstore = dynamic_cast<FixStorePeratom *>(modify->get_fix_by_id(cmd));
+  if (!fixstore)
+    fixstore = dynamic_cast<FixStorePeratom *>(modify->add_fix(cmd + " all STORE/PERATOM 0 1"));
 
   // do not carry weights with atoms during normal atom migration
 
@@ -930,7 +928,7 @@ int Balance::shift()
         // else add split I-1 or J+1 to set and try again
         // delta = size of expanded split set that will satisy criterion
 
-        while (1) {
+        while (true) {
           delta = (j-i) * close;
           midpt = 0.5 * (split[i]+split[j]);
           start = midpt - 0.5*delta;

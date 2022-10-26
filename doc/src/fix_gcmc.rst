@@ -259,9 +259,9 @@ pressure of the fictitious gas reservoir by:
 .. math::
 
    \mu^{id}  = & k T \ln{\rho \Lambda^3} \\
-             = & k T \ln{\frac{\phi P \Lambda^3}{k T}}
+             = & k T \ln{\frac{\phi P \Lambda^3}{k_B T}}
 
-where *k* is Boltzman's constant, *T* is the user-specified
+where :math:`k_B` is the Boltzmann constant, :math:`T` is the user-specified
 temperature, :math:`\rho` is the number density, *P* is the pressure,
 and :math:`\phi` is the fugacity coefficient.  The constant
 :math:`\Lambda` is required for dimensional consistency.  For all unit
@@ -269,7 +269,7 @@ styles except *lj* it is defined as the thermal de Broglie wavelength
 
 .. math::
 
-   \Lambda = \sqrt{ \frac{h^2}{2 \pi m k T}}
+   \Lambda = \sqrt{ \frac{h^2}{2 \pi m k_B T}}
 
 where *h* is Planck's constant, and *m* is the mass of the exchanged atom
 or molecule.  For unit style *lj*, :math:`\Lambda` is simply set to
@@ -320,7 +320,7 @@ this will ensure roughly the same behavior whether or not the
 *full_energy* option is used.
 
 Inserted atoms and molecules are assigned random velocities based on
-the specified temperature *T*. Because the relative velocity of all
+the specified temperature :math:`T`. Because the relative velocity of all
 atoms in the molecule is zero, this may result in inserted molecules
 that are systematically too cold. In addition, the intramolecular
 potential energy of the inserted molecule may cause the kinetic energy
@@ -444,8 +444,15 @@ doc page for more info.
 Do not set "neigh_modify once yes" or else this fix will never be
 called.  Reneighboring is required.
 
+Only usable for 3D simulations.
+
 Can be run in parallel, but aspects of the GCMC part will not scale
-well in parallel. Only usable for 3D simulations.
+well in parallel. Currently, molecule translations and rotations
+are not supported with more than one MPI process.
+It is still possible to do parallel molecule exchange without
+translation and rotation moves by setting MC moves to zero
+and/or by using the *mcmoves* keyword with *Pmoltrans* = *Pmolrotate* = 0 .
+
 
 When using fix gcmc in combination with fix shake or fix rigid,
 only GCMC exchange moves are supported, so the argument

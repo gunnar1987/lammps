@@ -1505,6 +1505,8 @@ struct AtomVecDPDKokkos_UnpackExchangeFunctor {
 /* ---------------------------------------------------------------------- */
 
 int AtomVecDPDKokkos::unpack_exchange_kokkos(DAT::tdual_xfloat_2d &k_buf,int nrecv,int nlocal,int dim,X_FLOAT lo,X_FLOAT hi,ExecutionSpace space) {
+  while (nlocal + nrecv/17 >= nmax) grow(0);
+
   if (space == Host) {
     k_count.h_view(0) = nlocal;
     AtomVecDPDKokkos_UnpackExchangeFunctor<LMPHostType> f(atomKK,k_buf,k_count,dim,lo,hi);
@@ -1716,14 +1718,15 @@ void AtomVecDPDKokkos::create_atom(int itype, double *coord)
    initialize other atom quantities
 ------------------------------------------------------------------------- */
 
-void AtomVecDPDKokkos::data_atom(double *coord, tagint imagetmp,
-                                    char **values)
+void AtomVecDPDKokkos::data_atom(double *coord, imageint imagetmp,
+                                 const std::vector<std::string> &values, std::string &extract)
 {
   int nlocal = atom->nlocal;
   if (nlocal == nmax) grow(0);
 
   h_tag[nlocal] = utils::tnumeric(FLERR,values[0],true,lmp);
   h_type[nlocal] = utils::inumeric(FLERR,values[1],true,lmp);
+  extract = values[1];
   if (type[nlocal] <= 0 || type[nlocal] > atom->ntypes)
     error->one(FLERR,"Invalid atom type in Atoms section of data file");
 
@@ -1759,9 +1762,10 @@ void AtomVecDPDKokkos::data_atom(double *coord, tagint imagetmp,
    initialize other atom quantities for this sub-style
 ------------------------------------------------------------------------- */
 
-int AtomVecDPDKokkos::data_atom_hybrid(int nlocal, char **values)
+int AtomVecDPDKokkos::data_atom_hybrid(int nlocal, const std::vector<std::string> &values,
+                                       int offset)
 {
-  h_dpdTheta(nlocal) = utils::numeric(FLERR,values[0],true,lmp);
+  h_dpdTheta(nlocal) = utils::numeric(FLERR,values[offset],true,lmp);
 
   atomKK->modified(Host,DPDTHETA_MASK);
 

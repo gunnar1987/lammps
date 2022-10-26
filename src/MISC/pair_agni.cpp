@@ -27,9 +27,7 @@
 #include "math_special.h"
 #include "memory.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
 #include "neighbor.h"
-#include "tokenizer.h"
 #include "potential_file_reader.h"
 
 #include <cmath>
@@ -39,13 +37,13 @@ using namespace LAMMPS_NS;
 using namespace MathSpecial;
 
 static const char cite_pair_agni[] =
-  "pair agni command:\n\n"
+  "pair agni command: doi:10.1021/acs.jpcc.9b04207\n\n"
   "@article{huan2019jpc,\n"
   " author    = {Huan, T. and Batra, R. and Chapman, J. and Kim, C. and Chandrasekaran, A. and Ramprasad, Rampi},\n"
-  " journal   = {J. Phys. Chem. C},\n"
-  " volume    = {121},\n"
+  " journal   = {J.~Phys.\\ Chem.~C},\n"
+  " volume    = {123},\n"
   " number    = {34},\n"
-  " pages     = {20715},\n"
+  " pages     = {20715--20722},\n"
   " year      = {2019},\n"
   "}\n\n";
 
@@ -250,10 +248,7 @@ void PairAGNI::coeff(int narg, char **arg)
 void PairAGNI::init_style()
 {
   // need a full neighbor list
-
-  int irequest = neighbor->request(this,instance_me);
-  neighbor->requests[irequest]->half = 0;
-  neighbor->requests[irequest]->full = 1;
+  neighbor->add_request(this, NeighConst::REQ_FULL);
 }
 
 /* ----------------------------------------------------------------------
@@ -411,11 +406,11 @@ void PairAGNI::setup_params()
     n = -1;
     for (m = 0; m < nparams; m++) {
       if (i == params[m].ielement) {
-        if (n >= 0) error->all(FLERR,"Potential file has duplicate entry");
+        if (n >= 0) error->all(FLERR,"Potential file has a duplicate entry for: {}", elements[i]);
         n = m;
       }
     }
-    if (n < 0) error->all(FLERR,"Potential file is missing an entry");
+    if (n < 0) error->all(FLERR,"Potential file is missing an entry for: {}", elements[i]);
     elem1param[i] = n;
   }
 

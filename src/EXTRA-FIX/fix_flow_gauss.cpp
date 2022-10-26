@@ -33,7 +33,7 @@ using namespace LAMMPS_NS;
 using namespace FixConst;
 
 static const char cite_flow_gauss[] =
-  "Gaussian dynamics package:\n\n"
+  "Gaussian dynamics package: doi:10.1021/acs.jpcb.6b09387\n\n"
   "@Article{strong_water_2017,\n"
   "title = {The Dynamics of Water in Porous Two-Dimensional Crystals},\n"
   "volume = {121},\n"
@@ -41,7 +41,7 @@ static const char cite_flow_gauss[] =
   "url = {https://doi.org/10.1021/acs.jpcb.6b09387},\n"
   "doi = {10.1021/acs.jpcb.6b09387},\n"
   "urldate = {2016-12-07},\n"
-  "journal = {J. Phys. Chem. B},\n"
+  "journal = {J.~Phys.\\ Chem.~B},\n"
   "author = {Strong, Steven E. and Eaves, Joel D.},\n"
   "year = {2017},\n"
   "pages = {189--207}\n"
@@ -84,16 +84,14 @@ FixFlowGauss::FixFlowGauss(LAMMPS *lmp, int narg, char **arg) :
 
   // by default, do not compute work done
 
-  workflag=0;
+  workflag=false;
 
   // process optional keyword
   int iarg = 6;
   while (iarg < narg) {
     if (strcmp(arg[iarg],"energy") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal energy keyword");
-      if (strcmp(arg[iarg+1],"yes") == 0) workflag = 1;
-      else if (strcmp(arg[iarg+1],"no") != 0)
-        error->all(FLERR,"Illegal energy keyword");
+      workflag = utils::logical(FLERR,arg[iarg+1],false,lmp) == 1;
       iarg += 2;
     } else error->all(FLERR,"Illegal fix flow/gauss command");
   }
@@ -125,7 +123,7 @@ void FixFlowGauss::init()
   //if respa level specified by fix_modify, then override default (outermost)
   //if specified level too high, set to max level
   if (utils::strmatch(update->integrate_style,"^respa")) {
-    ilevel_respa = ((Respa *) update->integrate)->nlevels-1;
+    ilevel_respa = (dynamic_cast<Respa *>(update->integrate))->nlevels-1;
     if (respa_level >= 0)
       ilevel_respa = MIN(respa_level,ilevel_respa);
   }
@@ -139,7 +137,7 @@ void FixFlowGauss::setup(int vflag)
 {
   // need to compute work done if fix_modify energy yes is set
 
-  if (thermo_energy) workflag = 1;
+  if (thermo_energy) workflag = true;
 
   // get total mass of group
 
@@ -148,9 +146,9 @@ void FixFlowGauss::setup(int vflag)
     error->all(FLERR,"Invalid group mass in fix flow/gauss");
 
   if (utils::strmatch(update->integrate_style,"^respa")) {
-    ((Respa *) update->integrate)->copy_flevel_f(ilevel_respa);
+    (dynamic_cast<Respa *>(update->integrate))->copy_flevel_f(ilevel_respa);
     post_force_respa(vflag,ilevel_respa,0);
-    ((Respa *) update->integrate)->copy_f_flevel(ilevel_respa);
+    (dynamic_cast<Respa *>(update->integrate))->copy_f_flevel(ilevel_respa);
   }
   else
     post_force(vflag);

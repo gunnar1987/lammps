@@ -1123,8 +1123,11 @@ Bibliography
 **(Sun)**
    Sun, J. Phys. Chem. B, 102, 7338-7364 (1998).
 
-**(Surblys)**
+**(Surblys2019)**
    Surblys, Matsubara, Kikugawa, Ohara, Phys Rev E, 99, 051301(R) (2019).
+
+**(Surblys2021)**
+   Surblys, Matsubara, Kikugawa, Ohara, J Appl Phys 130, 215104 (2021).
 
 **(Sutmann)**
    Sutmann, Arnold, Fahrenberger, et. al., Physical review / E 88(6), 063308 (2013)
@@ -1370,7 +1373,7 @@ Bibliography
    Zhu, Tajkhorshid, and Schulten, Biophys. J. 83, 154 (2002).
 
 **(Ziegler)**
-   J.F. Ziegler, J. P. Biersack and U. Littmark, "The Stopping and Range of Ions in Matter," Volume 1, Pergamon, 1985.
+   J.F. Ziegler, J. P. Biersack and U. Littmark, "The Stopping and Range of Ions in Matter", Volume 1, Pergamon, 1985.
 
 **(Zimmerman2004)**
    Zimmerman, JA; Webb, EB; Hoyt, JJ;. Jones, RE; Klein, PA; Bammann, DJ, "Calculation of stress in atomistic simulation." Special Issue of Modelling and Simulation in Materials Science and Engineering (2004),12:S319.

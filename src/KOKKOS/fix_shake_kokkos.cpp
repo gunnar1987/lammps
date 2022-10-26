@@ -12,12 +12,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <mpi.h>
-#include <cmath>
-#include <cstdlib>
-#include <cstring>
-#include <cstdio>
 #include "fix_shake_kokkos.h"
+
 #include "fix_rattle.h"
 #include "atom_kokkos.h"
 #include "atom_vec.h"
@@ -37,6 +33,9 @@
 #include "error.h"
 #include "kokkos.h"
 #include "atom_masks.h"
+
+#include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -182,6 +181,16 @@ void FixShakeKokkos<DeviceType>::init()
 
 
 /* ----------------------------------------------------------------------
+   run setup for minimization.
+------------------------------------------------------------------------- */
+
+template<class DeviceType>
+void FixShakeKokkos<DeviceType>::min_setup(int /*vflag*/)
+{
+  error->all(FLERR, "Cannot yet use fix {} during minimization with Kokkos", style);
+}
+
+/* ----------------------------------------------------------------------
    build list of SHAKE clusters to constrain
    if one or more atoms in cluster are on this proc,
      this proc lists the cluster exactly once
@@ -193,6 +202,7 @@ void FixShakeKokkos<DeviceType>::pre_neighbor()
   // local copies of atom quantities
   // used by SHAKE until next re-neighboring
 
+  ebond = 0.0;
   x = atom->x;
   v = atom->v;
   f = atom->f;
@@ -292,7 +302,7 @@ void FixShakeKokkos<DeviceType>::pre_neighbor()
 
   if (h_error_flag() == 1) {
     error->one(FLERR,"Shake atoms missing on proc "
-                                 "{} at step {}",me,update->ntimestep);
+                                 "{} at step {}",comm->me,update->ntimestep);
   }
 }
 
@@ -303,6 +313,7 @@ void FixShakeKokkos<DeviceType>::pre_neighbor()
 template<class DeviceType>
 void FixShakeKokkos<DeviceType>::post_force(int vflag)
 {
+  ebond = 0.0;
   copymode = 1;
 
   d_x = atomKK->k_x.view<DeviceType>();
@@ -341,7 +352,7 @@ void FixShakeKokkos<DeviceType>::post_force(int vflag)
   // communicate results if necessary
 
   unconstrained_update();
-  if (nprocs > 1) comm->forward_comm_fix(this);
+  if (comm->nprocs > 1) comm->forward_comm(this);
   k_xshake.sync<DeviceType>();
 
   // virial setup
@@ -590,8 +601,8 @@ void FixShakeKokkos<DeviceType>::shake(int m, EV_FLOAT& ev) const
 
   // The f array is duplicated for OpenMP, atomic for CUDA, and neither for Serial
 
-  auto v_f = ScatterViewHelper<typename NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
-  auto a_f = v_f.template access<typename AtomicDup<NEIGHFLAG,DeviceType>::value>();
+  auto v_f = ScatterViewHelper<NeedDup_v<NEIGHFLAG,DeviceType>,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
+  auto a_f = v_f.template access<AtomicDup_v<NEIGHFLAG,DeviceType>>();
 
   int nlist,list[2];
   double v[6];
@@ -701,8 +712,8 @@ void FixShakeKokkos<DeviceType>::shake3(int m, EV_FLOAT& ev) const
 
   // The f array is duplicated for OpenMP, atomic for CUDA, and neither for Serial
 
-  auto v_f = ScatterViewHelper<typename NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
-  auto a_f = v_f.template access<typename AtomicDup<NEIGHFLAG,DeviceType>::value>();
+  auto v_f = ScatterViewHelper<NeedDup_v<NEIGHFLAG,DeviceType>,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
+  auto a_f = v_f.template access<AtomicDup_v<NEIGHFLAG,DeviceType>>();
 
   int nlist,list[3];
   double v[6];
@@ -884,8 +895,8 @@ void FixShakeKokkos<DeviceType>::shake4(int m, EV_FLOAT& ev) const
 
   // The f array is duplicated for OpenMP, atomic for CUDA, and neither for Serial
 
-  auto v_f = ScatterViewHelper<typename NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
-  auto a_f = v_f.template access<typename AtomicDup<NEIGHFLAG,DeviceType>::value>();
+  auto v_f = ScatterViewHelper<NeedDup_v<NEIGHFLAG,DeviceType>,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
+  auto a_f = v_f.template access<AtomicDup_v<NEIGHFLAG,DeviceType>>();
 
  int nlist,list[4];
   double v[6];
@@ -1146,8 +1157,8 @@ void FixShakeKokkos<DeviceType>::shake3angle(int m, EV_FLOAT& ev) const
 
   // The f array is duplicated for OpenMP, atomic for CUDA, and neither for Serial
 
-  auto v_f = ScatterViewHelper<typename NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
-  auto a_f = v_f.template access<typename AtomicDup<NEIGHFLAG,DeviceType>::value>();
+  auto v_f = ScatterViewHelper<NeedDup_v<NEIGHFLAG,DeviceType>,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
+  auto a_f = v_f.template access<AtomicDup_v<NEIGHFLAG,DeviceType>>();
 
   int nlist,list[3];
   double v[6];
@@ -1528,7 +1539,7 @@ int FixShakeKokkos<DeviceType>::unpack_exchange(int nlocal, double *buf)
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
-int FixShakeKokkos<DeviceType>::pack_forward_comm_fix_kokkos(int n, DAT::tdual_int_2d k_sendlist,
+int FixShakeKokkos<DeviceType>::pack_forward_comm_kokkos(int n, DAT::tdual_int_2d k_sendlist,
                                                         int iswap_in, DAT::tdual_xfloat_1d &k_buf,
                                                         int pbc_flag, int* pbc)
 {
@@ -1588,7 +1599,7 @@ int FixShakeKokkos<DeviceType>::pack_forward_comm(int n, int *list, double *buf,
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
-void FixShakeKokkos<DeviceType>::unpack_forward_comm_fix_kokkos(int n, int first_in, DAT::tdual_xfloat_1d &buf)
+void FixShakeKokkos<DeviceType>::unpack_forward_comm_kokkos(int n, int first_in, DAT::tdual_xfloat_1d &buf)
 {
   first = first_in;
   d_buf = buf.view<DeviceType>();
@@ -1702,9 +1713,9 @@ void FixShakeKokkos<DeviceType>::correct_coordinates(int vflag) {
 
   double **xtmp = xshake;
   xshake = x;
-  if (nprocs > 1) {
+  if (comm->nprocs > 1) {
     forward_comm_device = 0;
-    comm->forward_comm_fix(this);
+    comm->forward_comm(this);
     forward_comm_device = 1;
   }
   xshake = xtmp;
@@ -1744,8 +1755,8 @@ void FixShakeKokkos<DeviceType>::v_tally(EV_FLOAT &ev, int n, int *list, double 
   if (vflag_atom) {
     double fraction = 1.0/total;
     for (int i = 0; i < n; i++) {
-      auto v_vatom = ScatterViewHelper<typename NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_vatom),decltype(ndup_vatom)>::get(dup_vatom,ndup_vatom);
-      auto a_vatom = v_vatom.template access<typename AtomicDup<NEIGHFLAG,DeviceType>::value>();
+      auto v_vatom = ScatterViewHelper<NeedDup_v<NEIGHFLAG,DeviceType>,decltype(dup_vatom),decltype(ndup_vatom)>::get(dup_vatom,ndup_vatom);
+      auto a_vatom = v_vatom.template access<AtomicDup_v<NEIGHFLAG,DeviceType>>();
       m = list[i];
       a_vatom(m,0) += fraction*v[0];
       a_vatom(m,1) += fraction*v[1];

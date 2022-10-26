@@ -81,11 +81,11 @@ the particle's velocity.  The proportionality constant for each atom is
 computed as :math:`\frac{m}{\mathrm{damp}}`, where *m* is the mass of the
 particle and damp is the damping factor specified by the user.
 
-:math:`F_r` is a force due to solvent atoms at a temperature *T*
+:math:`F_r` is a force due to solvent atoms at a temperature :math:`T`
 randomly bumping into the particle.  As derived from the
 fluctuation/dissipation theorem, its magnitude as shown above is
 proportional to :math:`\sqrt{\frac{k_B T m}{dt~\mathrm{damp}}}`, where
-:math:`k_B` is the Boltzmann constant, *T* is the desired temperature,
+:math:`k_B` is the Boltzmann constant, :math:`T` is the desired temperature,
 *m* is the mass of the particle, *dt* is the timestep size, and damp is
 the damping factor.  Random numbers are used to randomize the direction
 and magnitude of this force as described in :ref:`(Dunweg) <Dunweg1>`,
@@ -138,16 +138,18 @@ temperature with optional time-dependence as well.
 
 Like other fixes that perform thermostatting, this fix can be used
 with :doc:`compute commands <compute>` that remove a "bias" from the
-atom velocities.  E.g. removing the center-of-mass velocity from a
-group of atoms or removing the x-component of velocity from the
-calculation.  This is not done by default, but only if the
-:doc:`fix_modify <fix_modify>` command is used to assign a temperature
-compute to this fix that includes such a bias term.  See the doc pages
-for individual :doc:`compute commands <compute>` to determine which ones
-include a bias.  In this case, the thermostat works in the following
-manner: bias is removed from each atom, thermostatting is performed on
-the remaining thermal degrees of freedom, and the bias is added back
-in.
+atom velocities.  E.g. to apply the thermostat only to atoms within a
+spatial :doc:`region <region>`, or to remove the center-of-mass
+velocity from a group of atoms, or to remove the x-component of
+velocity from the calculation.
+
+This is not done by default, but only if the :doc:`fix_modify
+<fix_modify>` command is used to assign a temperature compute to this
+fix that includes such a bias term.  See the doc pages for individual
+:doc:`compute temp commands <compute>` to determine which ones include
+a bias.  In this case, the thermostat works in the following manner:
+bias is removed from each atom, thermostatting is performed on the
+remaining thermal degrees of freedom, and the bias is added back in.
 
 The *damp* parameter is specified in time units and determines how
 rapidly the temperature is relaxed.  For example, a value of 100.0 means
@@ -183,7 +185,8 @@ omega (which is derived from the angular momentum in the case of
 aspherical particles).
 
 The rotational temperature of the particles can be monitored by the
-:doc:`compute temp/sphere <compute_temp_sphere>` and :doc:`compute temp/asphere <compute_temp_asphere>` commands with their rotate
+:doc:`compute temp/sphere <compute_temp_sphere>` and :doc:`compute
+temp/asphere <compute_temp_asphere>` commands with their rotate
 options.
 
 For the *omega* keyword there is also a scale factor of

@@ -35,7 +35,6 @@ under
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <vector>
 
 #include "ptm_constants.h"
 #include "ptm_functions.h"
@@ -48,13 +47,13 @@ under
 using namespace LAMMPS_NS;
 
 static const char cite_user_ptm_package[] =
-    "PTM package:\n\n"
+    "PTM package: doi:10.1088/0965-0393/24/5/055007\n\n"
     "@Article{larsen2016ptm,\n"
-    " author={Larsen, Peter Mahler and Schmidt, S{\\o}ren and Schi{\\o}tz, "
-    "Jakob},\n"
-    " title={Robust structural identification via polyhedral template "
-    "matching},\n"
-    " journal={Modelling~Simul.~Mater.~Sci.~Eng.},\n"
+    " author={Larsen, Peter Mahler and Schmidt, S{\\o}ren and\n"
+    "    Schi{\\o}tz, Jakob},\n"
+    " title={Robust Structural Identification via Polyhedral Template\n"
+    "    Matching},\n"
+    " journal={Model.\\ Simulat.\\ Mater.\\ Sci.\\ Eng.},\n"
     " year={2016},\n"
     " number={5},\n"
     " volume={24},\n"
@@ -127,7 +126,7 @@ ComputePTMAtom::ComputePTMAtom(LAMMPS *lmp, int narg, char **arg)
   if (rmsd_threshold == 0)
     rmsd_threshold = INFINITY;
 
-  char* group_name = (char *)"all";
+  auto  group_name = (char *)"all";
   if (narg > 5) {
     group_name = arg[5];
   }
@@ -160,12 +159,7 @@ void ComputePTMAtom::init() {
 
   // need an occasional full neighbor list
 
-  int irequest = neighbor->request(this, instance_me);
-  neighbor->requests[irequest]->pair = 0;
-  neighbor->requests[irequest]->compute = 1;
-  neighbor->requests[irequest]->half = 0;
-  neighbor->requests[irequest]->full = 1;
-  neighbor->requests[irequest]->occasional = 1;
+  neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_OCCASIONAL);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -198,7 +192,7 @@ static bool sorthelper_compare(ptmnbr_t const &a, ptmnbr_t const &b) {
 
 static int get_neighbours(void* vdata, size_t central_index, size_t atom_index, int num, size_t* nbr_indices, int32_t* numbers, double (*nbr_pos)[3])
 {
-  ptmnbrdata_t* data = (ptmnbrdata_t*)vdata;
+  auto  data = (ptmnbrdata_t*)vdata;
   int *mask = data->mask;
   int group2bit = data->group2bit;
 

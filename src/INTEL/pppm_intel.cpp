@@ -25,6 +25,7 @@
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
+#include "force.h"
 #include "gridcomm.h"
 #include "math_const.h"
 #include "math_special.h"
@@ -32,7 +33,6 @@
 #include "modify.h"
 #include "suffix.h"
 
-#include <cstdlib>
 #include <cmath>
 
 #include "omp_compat.h"
@@ -93,11 +93,8 @@ PPPMIntel::~PPPMIntel()
 void PPPMIntel::init()
 {
   PPPM::init();
-  int ifix = modify->find_fix("package_intel");
-  if (ifix < 0)
-    error->all(FLERR,
-               "The 'package intel' command is required for /intel styles");
-  fix = static_cast<FixIntel *>(modify->fix[ifix]);
+  fix = static_cast<FixIntel *>(modify->get_fix_by_id("package_intel"));
+  if (!fix) error->all(FLERR, "The 'package intel' command is required for /intel styles");
 
   #ifdef _LMP_INTEL_OFFLOAD
   _use_base = 0;
@@ -406,7 +403,6 @@ void PPPMIntel::particle_map(IntelBuffers<flt_t,acc_t> *buffers)
       // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
       // current particle coord can be outside global and local box
       // add/subtract OFFSET to avoid int(-0.75) = 0 when want it to be -1
-
       int nx = static_cast<int> ((x[i].x-lo0)*xi+fshift) - OFFSET;
       int ny = static_cast<int> ((x[i].y-lo1)*yi+fshift) - OFFSET;
       int nz = static_cast<int> ((x[i].z-lo2)*zi+fshift) - OFFSET;
@@ -944,6 +940,7 @@ void PPPMIntel::fieldforce_ad(IntelBuffers<flt_t,acc_t> *buffers)
 #endif
     #endif
     for (int i = ifrom; i < ito; i++) {
+      i = IP_PRE_dword_index(i);
       particle_ekx[i] *= hx_inv;
       particle_eky[i] *= hy_inv;
       particle_ekz[i] *= hz_inv;
@@ -1122,9 +1119,9 @@ FFT_SCALAR *** PPPMIntel::create3d_offset(FFT_SCALAR ***&array, int n1lo,
 
   bigint nbytes = ((bigint) sizeof(FFT_SCALAR)) * n1*n2*n3 +
     INTEL_P3M_ALIGNED_MAXORDER*2;
-  FFT_SCALAR *data = (FFT_SCALAR *) memory->smalloc(nbytes,name);
+  auto data = (FFT_SCALAR *) memory->smalloc(nbytes,name);
   nbytes = ((bigint) sizeof(FFT_SCALAR *)) * n1*n2;
-  FFT_SCALAR **plane = (FFT_SCALAR **) memory->smalloc(nbytes,name);
+  auto plane = (FFT_SCALAR **) memory->smalloc(nbytes,name);
   nbytes = ((bigint) sizeof(FFT_SCALAR **)) * n1;
   array = (FFT_SCALAR ***) memory->smalloc(nbytes,name);
 
@@ -1155,3 +1152,16 @@ int PPPMIntel::use_base() {
   return _use_base;
 }
 #endif
+
+/* ----------------------------------------------------------------------
+   allows usage in derived classes (pppm/electrode/intel)
+------------------------------------------------------------------------- */
+template void PPPMIntel::particle_map<float,double>(IntelBuffers<float,double> *buffers);
+template void PPPMIntel::particle_map<double,double>(IntelBuffers<double,double> *buffers);
+template void PPPMIntel::particle_map<float,float>(IntelBuffers<float,float> *buffers);
+template void PPPMIntel::make_rho<float,double,0>(IntelBuffers<float,double> *buffers);
+template void PPPMIntel::make_rho<double,double,0>(IntelBuffers<double,double> *buffers);
+template void PPPMIntel::make_rho<float,float,0>(IntelBuffers<float,float> *buffers);
+template void PPPMIntel::make_rho<float,double,1>(IntelBuffers<float,double> *buffers);
+template void PPPMIntel::make_rho<double,double,1>(IntelBuffers<double,double> *buffers);
+template void PPPMIntel::make_rho<float,float,1>(IntelBuffers<float,float> *buffers);

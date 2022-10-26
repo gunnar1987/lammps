@@ -33,7 +33,6 @@ Please contact Timothy Sirk for questions (tim.sirk@us.army.mil).
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
-#include "fix.h"
 #include "fix_srp.h"
 #include "force.h"
 #include "memory.h"
@@ -53,10 +52,11 @@ using namespace LAMMPS_NS;
 #define ONETWOBIT 0x40000000
 
 static const char cite_srp[] =
+  "pair srp command: doi:10.1063/1.3698476\n\n"
   "@Article{Sirk2012\n"
-  " author = {T. Sirk and Y. Sliozberg and J. Brennan and M. Lisal and J. Andzelm},\n"
-  " title = {An enhanced entangled polymer model for dissipative particle dynamics},\n"
-  " journal = {J.~Chem.~Phys.},\n"
+  " author = {T. W. Sirk and Y. R. Sliozberg and J. K. Brennan and M. Lisal and J. W. Andzelm},\n"
+  " title = {An Enhanced Entangled Polymer Model for Dissipative Particle Dynamics},\n"
+  " journal = {J.~Chem.\\ Phys.},\n"
   " year =    2012,\n"
   " volume =  136,\n"
   " pages =   {134903}\n"
@@ -84,7 +84,7 @@ PairSRP::PairSRP(LAMMPS *lmp) : Pair(lmp), fix_id(nullptr)
   //   will be invoked before other fixes that migrate atoms
   //   this is checked for in FixSRP
 
-  f_srp = (FixSRP *) modify->add_fix(fmt::format("{:02d}_FIX_SRP all SRP",srp_instance));
+  f_srp = dynamic_cast<FixSRP *>(modify->add_fix(fmt::format("{:02d}_FIX_SRP all SRP", srp_instance)));
   ++srp_instance;
 }
 
@@ -126,7 +126,7 @@ PairSRP::~PairSRP()
   }
 
   // check nfix in case all fixes have already been deleted
-  if (modify->nfix) modify->delete_fix(f_srp->id);
+  if (modify->nfix && modify->get_fix_by_id(f_srp->id)!=nullptr) modify->delete_fix(f_srp->id);
 }
 
 /* ----------------------------------------------------------------------
@@ -359,11 +359,11 @@ void PairSRP::settings(int narg, char **arg)
   }
 
   // settings
-  midpoint = 0;
-  min = 0;
+  midpoint = false;
+  min = false;
 
-  if (strcmp(arg[2],"min") == 0) min = 1;
-  else if (strcmp(arg[2],"mid") == 0) midpoint = 1;
+  if (strcmp(arg[2],"min") == 0) min = true;
+  else if (strcmp(arg[2],"mid") == 0) midpoint = true;
   else
     error->all(FLERR,"Illegal pair_style command");
 
@@ -378,12 +378,8 @@ void PairSRP::settings(int narg, char **arg)
   while (iarg < narg) {
     if (strcmp(arg[iarg],"exclude") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal pair srp command");
-      if (strcmp(arg[iarg+1],"yes") == 0)
-        exclude = 1;
-      if (strcmp(arg[iarg+1],"no") == 0) {
-        if (min) error->all(FLERR,"Illegal exclude option in pair srp command");
-        exclude = 0;
-      }
+      exclude = utils::logical(FLERR, arg[iarg+1], false, lmp);
+      if (min && !exclude) error->all(FLERR,"Illegal exclude option in pair srp command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"bptype") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal pair srp command");
@@ -443,7 +439,7 @@ void PairSRP::coeff(int narg, char **arg)
 void PairSRP::init_style()
 {
   if (!force->newton_pair)
-    error->all(FLERR,"PairSRP: Pair srp requires newton pair on");
+    error->all(FLERR,"Pair srp requires newton pair on");
 
   // verify that fix SRP is still defined and has not been changed.
 
@@ -475,16 +471,13 @@ void PairSRP::init_style()
   // bond particles do not belong to group all
   // but thermo normalization is by nall
   // therefore should turn off normalization
-  int me;
-  MPI_Comm_rank(world,&me);
   char *arg1[2];
   arg1[0] = (char *) "norm";
   arg1[1] = (char *) "no";
   output->thermo->modify_params(2, arg1);
-  if (me == 0)
-    error->message(FLERR,"Thermo normalization turned off by pair srp");
+  if (comm->me == 0) error->message(FLERR,"Thermo normalization turned off by pair srp");
 
-  neighbor->request(this,instance_me);
+  neighbor->add_request(this);
 }
 
 /* ----------------------------------------------------------------------
