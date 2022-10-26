@@ -188,7 +188,7 @@ DumpMFP5::DumpMFP5(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 
   // if bond are written get corresponding fix
   // TBI check if fix exists .. we should take care for this with pylmps but a safety check would be good
-  rxbfix = (FixReaxFFBonds *) modify->fix[modify->find_fix_by_style("reax/c/bonds")];
+  rxbfix = (FixReaxFFBonds *) modify->get_fix_by_style("reax/c/bonds")[0];
   //printf("DEBUG DEBUG size of nmaxbonds %d\n", rxbfix->nbondmax);
 
   //printf ("size_one is %d\n", size_one);
