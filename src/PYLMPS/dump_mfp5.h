@@ -16,9 +16,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef DUMP_CLASS
-
+// clang-format off
 DumpStyle(mfp5,DumpMFP5)
-
+// clang-format on
 #else
 
 #ifndef LMP_DUMP_MFP5_H
@@ -36,7 +36,7 @@ namespace LAMMPS_NS {
 class DumpMFP5 : public Dump {
  public:
   DumpMFP5(class LAMMPS *, int, char**);
-  virtual ~DumpMFP5();
+  ~DumpMFP5() override;
 
  private:
   char *stage_name;
@@ -79,12 +79,12 @@ class DumpMFP5 : public Dump {
 
   FixReaxFFBonds *rxbfix;
 
-  void init_style();
-  int modify_param(int, char **);
-  void openfile();
-  void write_header(bigint);
-  void pack(tagint *);
-  void write_data(int, double *);
+  void init_style() override;
+  int modify_param(int, char **) override;
+  void openfile() override;
+  void write_header(bigint) override{};
+  void pack(tagint *) override;
+  void write_data(int, double *) override;
 
   void write_frame();
   int append_data(hid_t, int, double *);

@@ -19,7 +19,19 @@
                               to write hdf5 based mfp5 files. Thanks to Pierre for the clear code!
 ------------------------------------------------------------------------- */
 
-/* This is an experiment .. first we get rid of everything and only write positions in the default interval
+/* 
+RS Notes 2022 
+Note that this works only together with pylmps since the hdf5 must be generated somehow already.
+We only open the file and the datasets and write the data out.
+
+There are two major hacks in this code:
+- we grab the data from the fix reaxff/bonds (usually this writes an ascii file .. now it also writes an array and this dump pushes the data to the hdf5)
+- we write data from the thermo log output also to the dump
+
+this implies changes in REAXFF/fix_reaxff_bonds.cpp and in thermo.cpp
+WARNING: i am pretty sure that there are better (proper) ways to do this and the current construction is only becasue i am too stupid to understand how to do it right
+         BUT it works 
+
 */
 
 #include <cmath>
@@ -130,14 +142,14 @@ DumpMFP5::DumpMFP5(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
       every_vel = default_every;
       iarg+=1;
       n_parsed = element_args(narg-iarg, &arg[iarg], &every_vel);
-      if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
+      if (n_parsed<0) error->all(FLERR, "Illegal dump mfp5 command");
       iarg += n_parsed;
       size_one+=domain->dimension;
     } else if (strcmp(arg[iarg], "forces")==0) {
       every_forces = default_every;
       iarg+=1;
       n_parsed = element_args(narg-iarg, &arg[iarg], &every_forces);
-      if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
+      if (n_parsed<0) error->all(FLERR, "Illegal dump mfp5 command");
       iarg += n_parsed;
       size_one+=domain->dimension;
     } else if (strcmp(arg[iarg], "charges")==0) {
@@ -153,29 +165,28 @@ DumpMFP5::DumpMFP5(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
       every_cell = default_every;
       iarg+=1;
       n_parsed = element_args(narg-iarg, &arg[iarg], &every_cell);
-      if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
+      if (n_parsed<0) error->all(FLERR, "Illegal dump mfp5 command");
       iarg += n_parsed;
     } else if (strcmp(arg[iarg], "restart")==0) {
       every_restart = default_every;
       iarg+=1;
       n_parsed = element_args(narg-iarg, &arg[iarg], &every_restart);
-      if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
+      if (n_parsed<0) error->all(FLERR, "Illegal dump mfp5 command");
       iarg += n_parsed;
     } else if (strcmp(arg[iarg], "thermo")==0) {
       every_thermo = default_every;
       iarg+=1;
       n_parsed = element_args(narg-iarg, &arg[iarg], &every_thermo);
-      if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
-      iarg += n_parsed;
+      if (n_parsed<0) error->all(FLERR, "Illegal dump mfp5 command");
     } else if (strcmp(arg[iarg], "bond")==0) {
       every_bond = default_every;
       iarg+=1;
       n_parsed = element_args(narg-iarg, &arg[iarg], &every_bond);
-      if (n_parsed<0) error->all(FLERR, "Illegal dump h5md command");
+      if (n_parsed<0) error->all(FLERR, "Illegal dump mfp5 command");
       iarg += n_parsed;
     } else {
       printf("DEBUG iarg: %d arg[iarg] %s\n", iarg, arg[iarg]);
-      error->all(FLERR, "Invalid argument to dump h5md");
+      error->all(FLERR, "Invalid argument to dump mfp5");
     }
   }
 
@@ -188,8 +199,13 @@ DumpMFP5::DumpMFP5(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 
   // if bond are written get corresponding fix
   // TBI check if fix exists .. we should take care for this with pylmps but a safety check would be good
-  rxbfix = (FixReaxFFBonds *) modify->get_fix_by_style("reax/c/bonds")[0];
-  //printf("DEBUG DEBUG size of nmaxbonds %d\n", rxbfix->nbondmax);
+  // we do this here depending on whether every_bond >= 0 .. this should be set only in case of reaxff 
+  // which implies that the fix is exisiting
+  if (every_bond>=0) {
+    printf("DEBUG DEBUG .. using data from fix reaxff/bond\n");
+    rxbfix = (FixReaxFFBonds *) modify->get_fix_by_style("reaxff/bonds")[0]; // pick first element .. there should only be one such fix
+    printf("DEBUG DEBUG size of nmaxbonds %d\n", rxbfix->nbondmax);
+  }
 
   //printf ("size_one is %d\n", size_one);
 
@@ -387,14 +403,14 @@ void DumpMFP5::openfile()
   }
 }
 
-/* ---------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------- 
 
 void DumpMFP5::write_header(bigint nbig)
 {
   return;
 }
 
-/* ---------------------------------------------------------------------- */
+ ---------------------------------------------------------------------- */
 
 void DumpMFP5::pack(tagint *ids)
 {
