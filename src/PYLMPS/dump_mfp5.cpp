@@ -212,7 +212,7 @@ DumpMFP5::DumpMFP5(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
     memory->create(dump_xyz,domain->dimension*natoms,"dump:xyz");
     //printf ("dump:xyz allocated\n");
   }
-  if (every_image>=0) {
+  if ((every_image>=0) || (every_restart>=0)) {
     memory->create(dump_img,domain->dimension*natoms,"dump:img");
     //printf ("dump:xyz_img allocated\n");
   }
@@ -247,8 +247,9 @@ DumpMFP5::~DumpMFP5()
   if (every_xyz>=0) {
     if (me==0) H5Dclose(xyz_dset);    
   }
-  if (every_image>=0) {
+  if (every_image>=0 || every_restart>= 0) 
     memory->destroy(dump_img);
+  if (every_image >=0) {
     if (me==0) H5Dclose(img_dset);    
   }
   if (every_vel>=0 || every_restart>=0) 
@@ -431,7 +432,7 @@ void DumpMFP5::pack(tagint *ids)
           buf[m++] = x[i][1];
           if (dim>2) buf[m++] = x[i][2];
         }
-        if (every_image>=0) {
+        if (every_image>=0 || every_restart>=0) {
           buf[m++] = ix;
           buf[m++] = iy;
           if (dim>2) buf[m++] = iz;
@@ -474,7 +475,7 @@ void DumpMFP5::write_data(int n, double *mybuf)
       for (int j=0; j<dim; j++) {
         dump_xyz[k++] = mybuf[m++];
       }
-      if (every_image>=0)
+      if (every_image>=0 || every_restart>=0)
         for (int j=0; j<dim; j++) {
           dump_img[k_img++] = mybuf[m++];
         }
