@@ -142,16 +142,16 @@ void PairRUNNER::compute(int eflag, int vflag)
   if (toolarge > 0) error->all(FLERR, "Pair style runner does not support 64-bit atom IDs");
 
   runner_lammps_wrapper(&nlocal, &nghost, atomic_numbers, tmptag, &inum, &sum_num_neigh, ilist,
-                      runner_num_neigh, runner_neigh, lattice, runner_potential, &n_runner_potential,
-                      &x[0][0], &runner_energy, runner_local_e, runner_stress, runner_local_stress,
-                      runner_force);
+                        runner_num_neigh, runner_neigh, lattice, runner_potential, &n_runner_potential,
+                        &x[0][0], &runner_energy, runner_local_e, runner_stress, runner_local_stress,
+                        runner_force);
 
   delete[] tmptag;
 #else
   runner_lammps_wrapper(&nlocal, &nghost, atomic_numbers, tag, &inum, &sum_num_neigh, ilist,
-                      runner_num_neigh, runner_neigh, lattice, runner_potential, &n_runner_potential,
-                      &x[0][0], &runner_energy, runner_local_e, runner_stress, runner_local_stress,
-                      runner_force);
+                        runner_num_neigh, runner_neigh, lattice, runner_potential, &n_runner_potential,
+                        &x[0][0], &runner_energy, runner_local_e, runner_stress, runner_local_stress,
+                        runner_force);
 #endif
 
   irunner = 0;
@@ -284,8 +284,8 @@ void PairRUNNER::coeff(int narg, char **arg)
   // is invoked by setting n_potential_runner to 0.
   n_runner_potential = 0;
   runner_potential = new int[0];
-  runner_lammps_potential_initialise(runner_potential, &n_runner_potential, &cutoff, runner_file,
-                                   &n_runner_file, runner_string, &n_runner_string);
+  //runner_lammps_potential_initialise(runner_potential, &n_runner_potential, &cutoff, runner_file,
+  //                                   &n_runner_file, runner_string, &n_runner_string);
   delete[] runner_potential;
 
   // Allocate runner_potential integer array. This initialise call will transfer
@@ -293,8 +293,8 @@ void PairRUNNER::coeff(int narg, char **arg)
   // variable, and we will use it as a handle when calling the actual calculation
   // routine. We return the cutoff as well.
   runner_potential = new int[n_runner_potential];
-  runner_lammps_potential_initialise(runner_potential, &n_runner_potential, &cutoff, runner_file,
-                                   &n_runner_file, runner_string, &n_runner_string);
+  //runner_lammps_potential_initialise(runner_potential, &n_runner_potential, &cutoff, runner_file,
+  //                                   &n_runner_file, runner_string, &n_runner_string);
 }
 
 /* ----------------------------------------------------------------------

@@ -25,8 +25,7 @@ PairStyle(runner,PairRUNNER);
 extern "C" {
 int runner_lammps_api_version();
 void runner_lammps_wrapper(int *, int *, int *, int *, int *, int *, int *, int *, int *, double *,
-                         int *, int *, double *, double *, double *, double *, double *, double *);
-void runner_lammps_potential_initialise(int *, int *, double *, char *, int *, char *, int *);
+                           int *, int *, double *, double *, double *, double *, double *, double *);
 }
 
 namespace LAMMPS_NS {
