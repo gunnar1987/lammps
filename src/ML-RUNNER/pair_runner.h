@@ -24,8 +24,9 @@ PairStyle(runner,PairRUNNER);
 
 extern "C" {
 int runner_lammps_api_version();
+void runner_lammps_wrapper_init(const char *, int *);
 void runner_lammps_wrapper(int *, int *, int *, int *, int *, int *, int *, int *, int *, double *,
-                           int *, int *, double *, double *, double *, double *, double *, double *);
+                           double *, double *, double *, double *, double *, double *);
 }
 
 namespace LAMMPS_NS {
@@ -44,13 +45,7 @@ class PairRUNNER : public Pair {
 
  private:
   double cutoff;
-  int *runner_potential;
-  int n_runner_potential;
   int *map;           // mapping from atom types to elements
-  char *runner_file;    // mapping from atom types to elements
-  int n_runner_file;
-  char *runner_string;    // mapping from atom types to elements
-  int n_runner_string;
 };
 
 }    // namespace LAMMPS_NS
