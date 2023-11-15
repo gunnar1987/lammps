@@ -24,8 +24,8 @@ PairStyle(runner,PairRUNNER);
 
 extern "C" {
 int runner_lammps_api_version();
-void runner_lammps_wrapper_init(const char *, int *);
-void runner_lammps_wrapper(int *, int *, int *, int *, int *, int *, int *, int *, int *, double *,
+void runner_lammps_wrapper_init(const char *, int *, double *);
+void runner_lammps_wrapper(int *, int *, int *, int *, int *, int *, int *, int *, int *, int *, double *,
                            double *, double *, double *, double *, double *, double *);
 }
 

@@ -12,8 +12,8 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: 
-                         
+   Contributing authors: Gunnar Schmitz, Knut Nikolas Lausch
+
 ------------------------------------------------------------------------- */
 
 #include "pair_runner.h"
@@ -37,20 +37,27 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------------
+   constructor
+------------------------------------------------------------------------- */
 PairRUNNER::PairRUNNER(LAMMPS *lmp) : Pair(lmp)
 {
-  single_enable = 0;
-  restartinfo = 0;
-  one_coeff = 1;
-  no_virial_fdotr_compute = 1;
-  manybody_flag = 1;
-  centroidstressflag = CENTROID_NOTAVAIL;
-  unit_convert_flag = utils::NOCONVERT;
+  single_enable = 0; // HDNNP is not pairwise additive, due to three body terms
+  restartinfo = 0; // do not write binary restart files
+  one_coeff = 1; // parameters are read from input.nn, therefore pair_coeff only has single command
+  manybody_flag = 1; // Many-body potential flag
+  no_virial_fdotr_compute = 1; // ???
+  centroidstressflag = CENTROID_NOTAVAIL; // ???
+  unit_convert_flag = utils::NOCONVERT; // ???
   map = nullptr;
 }
 
+/* ----------------------------------------------------------------------
+   destructor
+------------------------------------------------------------------------- */
 PairRUNNER::~PairRUNNER()
 {
+  // Deallocate member variables
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
@@ -58,71 +65,78 @@ PairRUNNER::~PairRUNNER()
   }
 }
 
+/* ----------------------------------------------------------------------
+   main working routine
+------------------------------------------------------------------------- */
 void PairRUNNER::compute(int eflag, int vflag)
 {
   const bool debug = true;
- 
-  int inum, jnum, sum_num_neigh, ii, jj, i, irunner;
+
+  int inum, jnum, ii, jj, i, j;
   int *ilist;
   int *jlist;
   int *numneigh, **firstneigh;
-  int *runner_num_neigh, *runner_neigh, *atomic_numbers;
+  int *runnerNumNeigh, *runnerFirstNeighbor, *runnerJList, *runnerTypes;
 
+  ev_init(eflag, vflag); // initializes flags, which signal if energy and virial need to be tallied.
+
+  double **x = atom->x;
+  double **f = atom->f;
   int nlocal = atom->nlocal;
   int nghost = atom->nghost;
   int ntotal = nlocal + nghost;
   int *type = atom->type;
   tagint *tag = atom->tag;
 
-  double **x = atom->x;
-  double **f = atom->f;
+  // Interface variables
+  double *runnerLocalE, *runnerForce, *runnerLocalStress, *runnerStress, runnerEnergy, *lattice;
+  runnerLocalE = new double[ntotal];
+  runnerForce = new double[ntotal * 3];
+  runnerLocalStress = new double[ntotal * 9];
+  runnerStress = new double[9];
+  lattice = new double[9];
 
-  double *runner_local_e, *runner_force, *runner_local_stress, *runner_stress, runner_energy, *lattice;
+
+  // Neighborlist information
+  inum = list->inum; // number of local atoms
+  ilist = list->ilist; // local index of local atoms
+  numneigh = list->numneigh; // number of neighbors of local atoms (dimension inum)
+  firstneigh = list->firstneigh; // pointer array to first neighbors of local atoms (dimension inum)
 
   if (debug) std::cout << "Entered PairRUNNER::compute" << std::endl;
 
-  ev_init(eflag, vflag);
+  // Calculate total number of neighbors
+  int numneighSum = 0;
+  for (ii = 0; ii < inum; ii++) numneighSum += numneigh[ii];
 
-  inum = list->inum;
-  ilist = list->ilist;
-  numneigh = list->numneigh;
-  firstneigh = list->firstneigh;
+  // create  arrays for interface
+  runnerNumNeigh = new int[inum];
+  runnerFirstNeighbor = new int[inum];
+  runnerJList = new int[numneighSum];
+  runnerTypes = new int[ntotal];
 
-  sum_num_neigh = 0;
-  runner_num_neigh = new int[inum];
-
-  for (ii = 0; ii < inum; ii++) 
+  // Collect neighbor data
+  int irunner = 0;
+  for (ii = 0; ii < inum; ii++)
   {
-    i = ilist[ii];
-    runner_num_neigh[ii] = numneigh[i];
-    sum_num_neigh += numneigh[i];
-  }
+    i = ilist[ii]; // get local index of atom ii
+    jlist = firstneigh[i]; // pointer to first neighbor of atom
+    jnum = numneigh[i]; // number of neighbors jj of atom
+    runnerNumNeigh[ii] = jnum;
 
-  runner_neigh = new int[sum_num_neigh];
-  irunner = 0;
-
-  for (ii = 0; ii < inum; ii++) 
-  {
-    i = ilist[ii];
-    jlist = firstneigh[i];
-    jnum = numneigh[i];
-
-    for (jj = 0; jj < jnum; jj++) 
+    for (jj = 0; jj < jnum; jj++)
     {
-      runner_neigh[irunner] = (jlist[jj] & NEIGHMASK) + 1;
-      irunner++;
+      j = jlist[jj]; // index of neighbor jj
+      j &= NEIGHMASK; // masks bits, which encode pair information
+      if (jj == 0) runnerFirstNeighbor[ii] = irunner + 1;
+      runnerJList[irunner] = j;
+      irunner++; // runs till numNeighSum
     }
   }
+  // collect atomic numbers of all atoms
+  for (ii = 0; ii < ntotal; ii++) runnerTypes[ii] = map[type[ii]];
 
-  atomic_numbers = new int[ntotal];
-  for (ii = 0; ii < ntotal; ii++) atomic_numbers[ii] = map[type[ii]];
-
-  runner_local_e = new double[ntotal];
-  runner_force = new double[ntotal * 3];
-  runner_local_stress = new double[ntotal * 9];
-  runner_stress = new double[9];
-
-  lattice = new double[9];
+  // get lattice parameters
   lattice[0] = domain->xprd;
   lattice[1] = 0.0;
   lattice[2] = 0.0;
@@ -135,10 +149,11 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   if (debug) std::cout << "call runner interface" << std::endl;
 
+  std::cout << "Entered ML-RUNNER" << std::endl;
 #if defined(LAMMPS_BIGBIG)
   int *tmptag = new int[ntotal];
   int tmplarge = 0, toolarge = 0;
-  for (ii = 0; ii < ntotal; ++ii) 
+  for (ii = 0; ii < ntotal; ++ii)
   {
     tmptag[ii] = tag[ii];
     if (tag[ii] > MAXSMALLINT) tmplarge = 1;
@@ -146,79 +161,84 @@ void PairRUNNER::compute(int eflag, int vflag)
   MPI_Allreduce(&tmplarge, &toolarge, 1, MPI_INT, MPI_MAX, world);
   if (toolarge > 0) error->all(FLERR, "Pair style runner does not support 64-bit atom IDs");
 
-  runner_lammps_wrapper(&nlocal, &nghost, atomic_numbers, tmptag, &inum, &sum_num_neigh, ilist,
-                        runner_num_neigh, runner_neigh, lattice, 
-                        &x[0][0], &runner_energy, runner_local_e, runner_stress, runner_local_stress,
-                        runner_force);
+  runner_lammps_wrapper(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
+                        runnerNumNeigh, runnerJList, lattice,
+                        &x[0][0], &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
+                        runnerForce);
 
   delete[] tmptag;
 #else
-  runner_lammps_wrapper(&nlocal, &nghost, atomic_numbers, tag, &inum, &sum_num_neigh, ilist,
-                        runner_num_neigh, runner_neigh, lattice, 
-                        &x[0][0], &runner_energy, runner_local_e, runner_stress, runner_local_stress,
-                        runner_force);
+
+  runner_lammps_wrapper(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
+                        runnerNumNeigh, runnerFirstNeighbor, runnerJList, lattice,
+                        &x[0][0], &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
+                        runnerForce);
 #endif
 
   if (debug) std::cout << "Returned from RuNNer" << std::endl;
 
+  /*
+  Copy results from RuNNer back into LAMMPS atom array
+  */
+
+  // Forces
   irunner = 0;
-  for (ii = 0; ii < ntotal; ii++) 
+  for (ii = 0; ii < ntotal; ii++)
   {
-    for (jj = 0; jj < 3; jj++) 
+    for (jj = 0; jj < 3; jj++)
     {
-      f[ii][jj] += runner_force[irunner];
+      f[ii][jj] += runnerForce[irunner]; // runnerForce is a vector
       irunner++;
     }
   }
 
-  if (eflag_global) 
-  { 
-     eng_vdwl = runner_energy; 
-  }
+  // Potential energy
+  if (eflag_global) eng_vdwl = runnerEnergy;
 
-  if (eflag_atom) 
+  // Local energy
+  if (eflag_atom) for (ii = 0; ii < ntotal; ii++) eatom[ii] = runnerLocalE[ii];
+
+  // Stress
+  if (vflag_global)
   {
-    for (ii = 0; ii < ntotal; ii++) { eatom[ii] = runner_local_e[ii]; }
+    virial[0] = runnerStress[0];
+    virial[1] = runnerStress[4];
+    virial[2] = runnerStress[8];
+    virial[3] = (runnerStress[3] + runnerStress[1]) * 0.5;
+    virial[4] = (runnerStress[2] + runnerStress[6]) * 0.5;
+    virial[5] = (runnerStress[5] + runnerStress[7]) * 0.5;
   }
 
-  if (vflag_global) 
-  {
-    virial[0] = runner_stress[0];
-    virial[1] = runner_stress[4];
-    virial[2] = runner_stress[8];
-    virial[3] = (runner_stress[3] + runner_stress[1]) * 0.5;
-    virial[4] = (runner_stress[2] + runner_stress[6]) * 0.5;
-    virial[5] = (runner_stress[5] + runner_stress[7]) * 0.5;
-  }
-
-  if (vflag_atom) 
+  // Local stress
+  if (vflag_atom)
   {
     int iatom = 0;
     for (ii = 0; ii < ntotal; ii++) {
-      vatom[ii][0] += runner_local_stress[iatom + 0];
-      vatom[ii][1] += runner_local_stress[iatom + 4];
-      vatom[ii][2] += runner_local_stress[iatom + 8];
-      vatom[ii][3] += (runner_local_stress[iatom + 3] + runner_local_stress[iatom + 1]) * 0.5;
-      vatom[ii][4] += (runner_local_stress[iatom + 2] + runner_local_stress[iatom + 6]) * 0.5;
-      vatom[ii][5] += (runner_local_stress[iatom + 5] + runner_local_stress[iatom + 7]) * 0.5;
+      vatom[ii][0] += runnerLocalStress[iatom + 0];
+      vatom[ii][1] += runnerLocalStress[iatom + 4];
+      vatom[ii][2] += runnerLocalStress[iatom + 8];
+      vatom[ii][3] += (runnerLocalStress[iatom + 3] + runnerLocalStress[iatom + 1]) * 0.5;
+      vatom[ii][4] += (runnerLocalStress[iatom + 2] + runnerLocalStress[iatom + 6]) * 0.5;
+      vatom[ii][5] += (runnerLocalStress[iatom + 5] + runnerLocalStress[iatom + 7]) * 0.5;
       iatom += 9;
     }
   }
 
-  delete[] atomic_numbers;
-  delete[] runner_num_neigh;
-  delete[] runner_neigh;
-  delete[] runner_local_e;
-  delete[] runner_force;
-  delete[] runner_stress;
-  delete[] runner_local_stress;
+  // Deallocate internal arrays
+  delete[] runnerTypes;
+  delete[] runnerNumNeigh;
+  delete[] runnerFirstNeighbor;
+  delete[] runnerJList;
+  delete[] runnerLocalE;
+  delete[] runnerForce;
+  delete[] runnerStress;
+  delete[] runnerLocalStress;
   delete[] lattice;
 }
 
 /* ----------------------------------------------------------------------
    global settings
 ------------------------------------------------------------------------- */
-
 void PairRUNNER::settings(int narg, char ** /* arg */)
 {
   if (narg != 0) error->all(FLERR, "Illegal pair_style command");
@@ -235,63 +255,48 @@ void PairRUNNER::settings(int narg, char ** /* arg */)
 ------------------------------------------------------------------------- */
 void PairRUNNER::allocate()
 {
-  allocated = 1;
-  int num_at_types = atom->ntypes;
+  allocated = 1; // sets allocated flag, checked in coeff function
+  int np1 = atom->ntypes + 1; // +1 because typeID start at 1 not 0
 
-  setflag = memory->create(setflag, num_at_types + 1, num_at_types + 1, "pair:setflag");
-  cutsq = memory->create(cutsq, num_at_types + 1, num_at_types + 1, "pair:cutsq");
-  map = new int[num_at_types + 1];
+  setflag = memory->create(setflag, np1, np1, "pair:setflag");
+  cutsq = memory->create(cutsq, np1, np1, "pair:cutsq");
+  map = new int[np1];
 }
 
 void PairRUNNER::coeff(int narg, char **arg)
 {
   if (!allocated) allocate();
 
-  int num_at_types = atom->ntypes;
-  if (narg != (2 + num_at_types)) error->all(FLERR, "Number of arguments {} is not correct, it should be {}", narg, 2 + num_at_types);
+  int ntypes = atom->ntypes;
 
-  for (int iarg = 2; iarg < narg; iarg++) 
-  {
-    if (strcmp(arg[iarg], "NULL") == 0)
-    {
-      map[iarg - 1] = -1;
-    }
-    else
-    {
-      map[iarg - 1] = utils::inumeric(FLERR, arg[iarg], false, lmp);
-    }
-  }
+  // We only have the mapping of the element to type in the pair_coeff line
+  // narg 0 and 1 are two wildcards * * for I,J, so mapping declaration starts at 2
+  if (narg != (2 + ntypes))
+    error->all(FLERR, "Number of arguments {} is not correct, it should be {}", narg, 2 + ntypes);
+
+  // iarg - 1, because we start at 2, so first entry is 1.
+  for (int iarg = 2; iarg < narg; iarg++) map[iarg - 1] = utils::inumeric(FLERR, arg[iarg], false, lmp);
 
   // clear setflag since coeff() might be called once with I,J = * *
-  num_at_types = atom->ntypes;
-  for (int iat = 1; iat <= num_at_types; iat++)
-  {
-    for (int jat = iat; jat <= num_at_types; jat++) 
-    {
-       setflag[iat][jat] = 0;
-    }
-  }
+  for (int iat = 1; iat <= ntypes; iat++)
+    for (int jat = iat; jat <= ntypes; jat++) setflag[iat][jat] = 0;
 
   // set setflag i,j for type pairs where both are mapped to elements
   int count = 0;
-  for (int iat = 1; iat <= num_at_types; iat++)
-  {
-    for (int jat = iat; jat <= num_at_types; jat++)
-    {
-      if (map[iat] >= 0 && map[jat] >= 0) 
+  for (int iat = 1; iat <= ntypes; iat++)
+    for (int jat = iat; jat <= ntypes; jat++)
+      if (map[iat] >= 0 && map[jat] >= 0)
       {
         setflag[iat][jat] = 1;
         count++;
       }
-    }
-  }
 
   if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients");
 
-  // initialize RuNNer 
-  std::string finputnn = "input.nn2";
+  // Read model coefficients and do initialization on RuNNer side, return cutoff for LAMMPS neighborlist
+  std::string finputnn = "input.nn";
   int n_input_nn_len = strlen(finputnn.c_str());
-  runner_lammps_wrapper_init(finputnn.c_str(),&n_input_nn_len);
+  runner_lammps_wrapper_init(finputnn.c_str(),&n_input_nn_len, &cutoff);
 }
 
 /* ----------------------------------------------------------------------
@@ -311,5 +316,7 @@ void PairRUNNER::init_style()
 ------------------------------------------------------------------------- */
 double PairRUNNER::init_one(int /*i*/, int /*j*/)
 {
+  // This function is called in the init phase of the simulation
+  // It returns the cutoff, which is then used by LAMMPS for the neighborlist calculation
   return cutoff;
 }
