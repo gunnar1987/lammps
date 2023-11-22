@@ -70,7 +70,7 @@ PairRUNNER::~PairRUNNER()
 ------------------------------------------------------------------------- */
 void PairRUNNER::compute(int eflag, int vflag)
 {
-  const bool debug = true;
+  const bool debug = false;
 
   int inum, jnum, ii, jj, i, j;
   int *ilist;
@@ -149,7 +149,6 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   if (debug) std::cout << "call runner interface" << std::endl;
 
-  std::cout << "Entered ML-RUNNER" << std::endl;
 #if defined(LAMMPS_BIGBIG)
   int *tmptag = new int[ntotal];
   int tmplarge = 0, toolarge = 0;
@@ -305,6 +304,8 @@ void PairRUNNER::coeff(int narg, char **arg)
 void PairRUNNER::init_style()
 {
   // Require newton pair on
+  // Switches reverse communication on, which adds data from ghost atoms to corresponding local atoms
+  // Required for RuNNer forces
   if (force->newton_pair != 1) error->all(FLERR, "Pair style runner requires newton pair on");
 
   // request full neighbor list
