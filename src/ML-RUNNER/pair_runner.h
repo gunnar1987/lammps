@@ -26,7 +26,7 @@ extern "C" {
 int runner_lammps_api_version();
 void runner_lammps_wrapper_init(const char *, int *, double *);
 void runner_lammps_wrapper(int *, int *, int *, int *, int *, int *, int *, int *, int *, int *, double *,
-                           double *, double *, double *, double *, double *, double *);
+                           double *, double *, double *, double *, double *, double *, double *);
 }
 
 namespace LAMMPS_NS {
@@ -43,9 +43,18 @@ class PairRUNNER : public Pair {
   double init_one(int, int) override;
   void allocate();
 
+  int pack_forward_comm(int, int *, double *, int, int *) override;
+  void unpack_forward_comm(int, int, double *) override;
+
  private:
   double cutoff;
   int *map;           // mapping from atom types to elements
+
+  int nmax; // allocated size of per-atom arrays
+
+  // additional per-atom arrays
+  double *atCharge, *hirshVolume, *elecNegativity;
+  int cfstyle, crstyle;
 };
 
 }    // namespace LAMMPS_NS

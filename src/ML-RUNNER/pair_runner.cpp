@@ -50,6 +50,13 @@ PairRUNNER::PairRUNNER(LAMMPS *lmp) : Pair(lmp)
   centroidstressflag = CENTROID_NOTAVAIL; // ???
   unit_convert_flag = utils::NOCONVERT; // ???
   map = nullptr;
+
+  nmax = 0;
+  atCharge = nullptr;
+  hirshVolume = nullptr;
+  elecNegativity = nullptr;
+  comm_forward = 1;
+  cfstyle = 1;
 }
 
 /* ----------------------------------------------------------------------
@@ -61,6 +68,9 @@ PairRUNNER::~PairRUNNER()
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
+    memory->destroy(atCharge);
+    memory->destroy(hirshVolume);
+    memory->destroy(elecNegativity);
     delete[] map;
   }
 }
@@ -96,6 +106,24 @@ void PairRUNNER::compute(int eflag, int vflag)
   runnerStress = new double[9];
   lattice = new double[9];
 
+  // additional per-atom arrays
+  if (atom->nmax > nmax) {
+    memory->destroy(atCharge);
+    memory->destroy(hirshVolume);
+    memory->destroy(elecNegativity);
+    nmax = atom->nmax;
+
+    memory->create(atCharge,nmax,"pair:atCharge");
+    memory->create(hirshVolume,nmax,"pair:hirshVolume");
+    memory->create(elecNegativity,nmax,"pair:elecNegativity");
+  }
+
+  for (i = 0; i < nmax; i++)
+  {
+    atCharge[i] = 0.0;
+    hirshVolume[i] = 0.0;
+    elecNegativity[i] = 0.0;
+  }
 
   // Neighborlist information
   inum = list->inum; // number of local atoms
@@ -163,7 +191,7 @@ void PairRUNNER::compute(int eflag, int vflag)
   runner_lammps_wrapper(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
                         runnerNumNeigh, runnerJList, lattice,
                         &x[0][0], &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
-                        runnerForce);
+                        runnerForce, hirshVolume);
 
   delete[] tmptag;
 #else
@@ -171,7 +199,7 @@ void PairRUNNER::compute(int eflag, int vflag)
   runner_lammps_wrapper(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
                         runnerNumNeigh, runnerFirstNeighbor, runnerJList, lattice,
                         &x[0][0], &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
-                        runnerForce);
+                        runnerForce, hirshVolume);
 #endif
 
   if (debug) std::cout << "Returned from RuNNer" << std::endl;
@@ -179,6 +207,18 @@ void PairRUNNER::compute(int eflag, int vflag)
   /*
   Copy results from RuNNer back into LAMMPS atom array
   */
+
+  for (i = 0; i < ntotal; i++)
+  {
+    std::cout << "LAMMPS Hirshfeld Volume before comm " << i << " " << hirshVolume[i] << std::endl;
+  }
+
+  comm->forward_comm(this);
+
+  for (i = 0; i < ntotal; i++)
+  {
+    std::cout << "LAMMPS Hirshfeld Volume after comm " << i << " " << hirshVolume[i] << std::endl;
+  }
 
   // Forces
   irunner = 0;
@@ -320,4 +360,64 @@ double PairRUNNER::init_one(int /*i*/, int /*j*/)
   // This function is called in the init phase of the simulation
   // It returns the cutoff, which is then used by LAMMPS for the neighborlist calculation
   return cutoff;
+}
+
+/* ----------------------------------------------------------------------
+   communication between local and ghost atoms
+------------------------------------------------------------------------- */
+
+int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
+{
+  int i,j,m;
+
+  if (cfstyle == 1)
+  {
+    m = 0;
+    for (i = 0; i < n; i++) {
+      j = list[i];
+      buf[m++] = hirshVolume[j];
+    }
+  }
+  else if (cfstyle == 2)
+  {
+    m = 0;
+    for (i = 0; i < n; i++) {
+      j = list[i];
+      buf[m++] = atCharge[j];
+    }
+  }
+  else if (cfstyle == 3)
+  {
+    m = 0;
+    for (i = 0; i < n; i++) {
+      j = list[i];
+      buf[m++] = elecNegativity[j];
+    }
+  }
+
+  return m;
+}
+
+void PairRUNNER::unpack_forward_comm(int n, int first, double *buf)
+{
+  int i,m,last;
+
+  if (cfstyle == 1)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) hirshVolume[i] = buf[m++];
+  }
+  else if (cfstyle == 2)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) atCharge[i] = buf[m++];
+  }
+  else if (cfstyle == 3)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) elecNegativity[i] = buf[m++];
+  }
 }
