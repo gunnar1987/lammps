@@ -54,9 +54,10 @@ PairRUNNER::PairRUNNER(LAMMPS *lmp) : Pair(lmp)
   nmax = 0;
   atCharge = nullptr;
   hirshVolume = nullptr;
+  hirshVolumeGradient = nullptr;
   elecNegativity = nullptr;
   comm_forward = 1;
-  cfstyle = 1;
+  cfstyle = COMMHIRSHVOLUME;
 }
 
 /* ----------------------------------------------------------------------
@@ -70,6 +71,7 @@ PairRUNNER::~PairRUNNER()
     memory->destroy(cutsq);
     memory->destroy(atCharge);
     memory->destroy(hirshVolume);
+    memory->destroy(hirshVolumeGradient);
     memory->destroy(elecNegativity);
     delete[] map;
   }
@@ -110,11 +112,13 @@ void PairRUNNER::compute(int eflag, int vflag)
   if (atom->nmax > nmax) {
     memory->destroy(atCharge);
     memory->destroy(hirshVolume);
+    memory->destroy(hirshVolumeGradient);
     memory->destroy(elecNegativity);
     nmax = atom->nmax;
 
     memory->create(atCharge,nmax,"pair:atCharge");
     memory->create(hirshVolume,nmax,"pair:hirshVolume");
+    memory->create(hirshVolumeGradient,nmax,3,"pair:hirshVolumeGradient");
     memory->create(elecNegativity,nmax,"pair:elecNegativity");
   }
 
@@ -123,6 +127,10 @@ void PairRUNNER::compute(int eflag, int vflag)
     atCharge[i] = 0.0;
     hirshVolume[i] = 0.0;
     elecNegativity[i] = 0.0;
+    for (j = 0; j < 3; j++)
+    {
+      hirshVolumeGradient[i][j] = 0.0;
+    }
   }
 
   // Neighborlist information
@@ -188,18 +196,18 @@ void PairRUNNER::compute(int eflag, int vflag)
   MPI_Allreduce(&tmplarge, &toolarge, 1, MPI_INT, MPI_MAX, world);
   if (toolarge > 0) error->all(FLERR, "Pair style runner does not support 64-bit atom IDs");
 
-  runner_lammps_wrapper(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
+  runner_lammps_interface_short_range(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
                         runnerNumNeigh, runnerJList, lattice,
                         &x[0][0], &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
-                        runnerForce, hirshVolume);
+                        runnerForce, hirshVolume, &hirshVolumeGradient[0][0], atCharge, elecNegativity);
 
   delete[] tmptag;
 #else
 
-  runner_lammps_wrapper(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
+  runner_lammps_interface_short_range(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
                         runnerNumNeigh, runnerFirstNeighbor, runnerJList, lattice,
                         &x[0][0], &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
-                        runnerForce, hirshVolume);
+                        runnerForce, hirshVolume, &hirshVolumeGradient[0][0], atCharge, elecNegativity);
 #endif
 
   if (debug) std::cout << "Returned from RuNNer" << std::endl;
@@ -210,14 +218,30 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   for (i = 0; i < ntotal; i++)
   {
-    std::cout << "LAMMPS Hirshfeld Volume before comm " << i << " " << hirshVolume[i] << std::endl;
+    // std::cout << "LAMMPS Hirshfeld Volume before comm " << i << " " << hirshVolume[i] << std::endl;
   }
 
-  comm->forward_comm(this);
+  if (lHirshVolume)
+  {
+    cfstyle = COMMHIRSHVOLUME;
+    comm->forward_comm(this);
+    if (lHirshVolumeGradient)
+    {
+      // Communication has to be done component wise because size of per-atom buffer needs to be set to 1.
+      cfstyle = COMMHIRSHGRADIENTX;
+      comm->forward_comm(this);
+      cfstyle = COMMHIRSHGRADIENTY;
+      comm->forward_comm(this);
+      cfstyle = COMMHIRSHGRADIENTZ;
+      comm->forward_comm(this);
+    }
+    runner_lammps_interface_hirshfeld_vdw(&nlocal, &nghost, &inum, ilist,
+      hirshVolume, &hirshVolumeGradient[0][0], &runnerEnergy, runnerForce);
+  }
 
   for (i = 0; i < ntotal; i++)
   {
-    std::cout << "LAMMPS Hirshfeld Volume after comm " << i << " " << hirshVolume[i] << std::endl;
+    // std::cout << "LAMMPS Hirshfeld Volume after comm " << i << " " << hirshVolume[i] << std::endl;
   }
 
   // Forces
@@ -335,7 +359,8 @@ void PairRUNNER::coeff(int narg, char **arg)
   // Read model coefficients and do initialization on RuNNer side, return cutoff for LAMMPS neighborlist
   std::string finputnn = "input.nn";
   int n_input_nn_len = strlen(finputnn.c_str());
-  runner_lammps_wrapper_init(finputnn.c_str(),&n_input_nn_len, &cutoff);
+  runner_lammps_interface_init(finputnn.c_str(),&n_input_nn_len, &cutoff,
+    &lAtCharge, &lElecNegativity, &lHirshVolume, &lHirshVolumeGradient);
 }
 
 /* ----------------------------------------------------------------------
@@ -365,31 +390,60 @@ double PairRUNNER::init_one(int /*i*/, int /*j*/)
 /* ----------------------------------------------------------------------
    communication between local and ghost atoms
 ------------------------------------------------------------------------- */
-
 int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
 {
   int i,j,m;
 
-  if (cfstyle == 1)
+  if (cfstyle == COMMHIRSHVOLUME)
   {
     m = 0;
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
       j = list[i];
       buf[m++] = hirshVolume[j];
     }
   }
-  else if (cfstyle == 2)
+  else if (cfstyle == COMMHIRSHGRADIENTX)
   {
     m = 0;
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      buf[m++] = hirshVolumeGradient[j][0];
+    }
+  }
+  else if (cfstyle == COMMHIRSHGRADIENTY)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      buf[m++] = hirshVolumeGradient[j][1];
+    }
+  }
+  else if (cfstyle == COMMHIRSHGRADIENTZ)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      buf[m++] = hirshVolumeGradient[j][2];
+    }
+  }
+  else if (cfstyle == COMMATCHARGE)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
       j = list[i];
       buf[m++] = atCharge[j];
     }
   }
-  else if (cfstyle == 3)
+  else if (cfstyle == COMMELECNEGATIVITY)
   {
     m = 0;
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
       j = list[i];
       buf[m++] = elecNegativity[j];
     }
@@ -402,19 +456,37 @@ void PairRUNNER::unpack_forward_comm(int n, int first, double *buf)
 {
   int i,m,last;
 
-  if (cfstyle == 1)
+  if (cfstyle == COMMHIRSHVOLUME)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) hirshVolume[i] = buf[m++];
   }
-  else if (cfstyle == 2)
+  else if (cfstyle == COMMHIRSHGRADIENTX)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) hirshVolumeGradient[i][0] = buf[m++];
+  }
+  else if (cfstyle == COMMHIRSHGRADIENTY)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) hirshVolumeGradient[i][1] = buf[m++];
+  }
+  else if (cfstyle == COMMHIRSHGRADIENTZ)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) hirshVolumeGradient[i][2] = buf[m++];
+  }
+  else if (cfstyle == COMMATCHARGE)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) atCharge[i] = buf[m++];
   }
-  else if (cfstyle == 3)
+  else if (cfstyle == COMMELECNEGATIVITY)
   {
     m = 0;
     last = first + n;

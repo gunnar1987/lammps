@@ -24,9 +24,11 @@ PairStyle(runner,PairRUNNER);
 
 extern "C" {
 int runner_lammps_api_version();
-void runner_lammps_wrapper_init(const char *, int *, double *);
-void runner_lammps_wrapper(int *, int *, int *, int *, int *, int *, int *, int *, int *, int *, double *,
-                           double *, double *, double *, double *, double *, double *, double *);
+void runner_lammps_interface_init(const char *, int *, double *, bool *, bool *, bool *, bool *);
+void runner_lammps_interface_short_range(int *, int *, int *, int *, int *, int *, int *, int *, int *, int *, double *,
+                           double *, double *, double *, double *, double *, double *, double *,
+                           double *, double *, double *);
+void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *, double * , double *);
 }
 
 namespace LAMMPS_NS {
@@ -48,13 +50,21 @@ class PairRUNNER : public Pair {
 
  private:
   double cutoff;
-  int *map;           // mapping from atom types to elements
+  int *map; // mapping from atom types to elements
 
   int nmax; // allocated size of per-atom arrays
 
   // additional per-atom arrays
   double *atCharge, *hirshVolume, *elecNegativity;
+  double **hirshVolumeGradient;
+  bool lAtCharge, lElecNegativity, lHirshVolume, lHirshVolumeGradient;
   int cfstyle, crstyle;
+  const int COMMATCHARGE = 1;
+  const int COMMELECNEGATIVITY = 2;
+  const int COMMHIRSHVOLUME = 3;
+  const int COMMHIRSHGRADIENTX = 4;
+  const int COMMHIRSHGRADIENTY = 5;
+  const int COMMHIRSHGRADIENTZ = 6;
 };
 
 }    // namespace LAMMPS_NS
