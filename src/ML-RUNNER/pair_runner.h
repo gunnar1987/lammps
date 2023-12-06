@@ -25,9 +25,10 @@ PairStyle(runner,PairRUNNER);
 extern "C" {
 int runner_lammps_api_version();
 void runner_lammps_interface_init(const char *, int *, double *, bool *, bool *, bool *, bool *);
-void runner_lammps_interface_short_range(int *, int *, int *, int *, int *, int *, int *, int *, int *, int *, double *,
-                           double *, double *, double *, double *, double *, double *, double *,
-                           double *, double *, double *);
+void runner_lammps_interface_transfer_atoms_and_neighbor_lists(int *, int *, int *, int *, int *, int *, int *,
+   int *, int *, double *, double *, bool *);
+void runner_lammps_interface_short_range(int *, int *, int *, int *,
+   double *, double *, double *, double *, double *, double *, double *, double *, double *);
 void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *, double * , double *);
 }
 

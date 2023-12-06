@@ -83,6 +83,7 @@ PairRUNNER::~PairRUNNER()
 void PairRUNNER::compute(int eflag, int vflag)
 {
   const bool debug = false;
+  bool lperiodic = true; // How to get this information in LAMMPS?
 
   int inum, jnum, ii, jj, i, j;
   int *ilist;
@@ -98,7 +99,7 @@ void PairRUNNER::compute(int eflag, int vflag)
   int nghost = atom->nghost;
   int ntotal = nlocal + nghost;
   int *type = atom->type;
-  tagint *tag = atom->tag;
+  tagint *tag = atom->tag; // We currently don't need those
 
   // Interface variables
   double *runnerLocalE, *runnerForce, *runnerLocalStress, *runnerStress, runnerEnergy, *lattice;
@@ -185,41 +186,14 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   if (debug) std::cout << "call runner interface" << std::endl;
 
-#if defined(LAMMPS_BIGBIG)
-  int *tmptag = new int[ntotal];
-  int tmplarge = 0, toolarge = 0;
-  for (ii = 0; ii < ntotal; ++ii)
-  {
-    tmptag[ii] = tag[ii];
-    if (tag[ii] > MAXSMALLINT) tmplarge = 1;
-  }
-  MPI_Allreduce(&tmplarge, &toolarge, 1, MPI_INT, MPI_MAX, world);
-  if (toolarge > 0) error->all(FLERR, "Pair style runner does not support 64-bit atom IDs");
+  runner_lammps_interface_transfer_atoms_and_neighbor_lists(&nlocal, &nghost, runnerTypes, &inum,
+    &numneighSum, ilist, runnerNumNeigh, runnerFirstNeighbor, runnerJList, lattice, &x[0][0], &lperiodic);
 
-  runner_lammps_interface_short_range(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
-                        runnerNumNeigh, runnerJList, lattice,
-                        &x[0][0], &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
-                        runnerForce, hirshVolume, &hirshVolumeGradient[0][0], atCharge, elecNegativity);
-
-  delete[] tmptag;
-#else
-
-  runner_lammps_interface_short_range(&nlocal, &nghost, runnerTypes, tag, &inum, &numneighSum, ilist,
-                        runnerNumNeigh, runnerFirstNeighbor, runnerJList, lattice,
-                        &x[0][0], &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
-                        runnerForce, hirshVolume, &hirshVolumeGradient[0][0], atCharge, elecNegativity);
-#endif
+  runner_lammps_interface_short_range(&nlocal, &nghost, &inum, ilist,
+    &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
+    runnerForce, hirshVolume, &hirshVolumeGradient[0][0], atCharge, elecNegativity);
 
   if (debug) std::cout << "Returned from RuNNer" << std::endl;
-
-  /*
-  Copy results from RuNNer back into LAMMPS atom array
-  */
-
-  for (i = 0; i < ntotal; i++)
-  {
-    // std::cout << "LAMMPS Hirshfeld Volume before comm " << i << " " << hirshVolume[i] << std::endl;
-  }
 
   if (lHirshVolume)
   {
@@ -239,10 +213,9 @@ void PairRUNNER::compute(int eflag, int vflag)
       hirshVolume, &hirshVolumeGradient[0][0], &runnerEnergy, runnerForce);
   }
 
-  for (i = 0; i < ntotal; i++)
-  {
-    // std::cout << "LAMMPS Hirshfeld Volume after comm " << i << " " << hirshVolume[i] << std::endl;
-  }
+   /*
+  Copy results from RuNNer back into LAMMPS atom array
+  */
 
   // Forces
   irunner = 0;
