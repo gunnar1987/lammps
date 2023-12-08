@@ -51,13 +51,15 @@ PairRUNNER::PairRUNNER(LAMMPS *lmp) : Pair(lmp)
   unit_convert_flag = utils::NOCONVERT; // ???
   map = nullptr;
 
+  // additional per-atom arrays for communication
   nmax = 0;
   atCharge = nullptr;
   hirshVolume = nullptr;
   hirshVolumeGradient = nullptr;
   elecNegativity = nullptr;
-  comm_forward = 1;
-  cfstyle = COMMHIRSHVOLUME;
+  comm_forward = 1; // forward communication (1 double per atom)
+  comm_reverse = 1; // reverse communication (1 double per atom)
+  commstyle = 0;
 }
 
 /* ----------------------------------------------------------------------
@@ -109,7 +111,9 @@ void PairRUNNER::compute(int eflag, int vflag)
   runnerStress = new double[9];
   lattice = new double[9];
 
-  // additional per-atom arrays
+  if (debug) std::cout << "Entered PairRUNNER::compute" << std::endl;
+
+  // allocate additional per-atom arrays
   if (atom->nmax > nmax) {
     memory->destroy(atCharge);
     memory->destroy(hirshVolume);
@@ -123,6 +127,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     memory->create(elecNegativity,nmax,"pair:elecNegativity");
   }
 
+  // Set additional per-atom arrays to zero
   for (i = 0; i < nmax; i++)
   {
     atCharge[i] = 0.0;
@@ -139,8 +144,6 @@ void PairRUNNER::compute(int eflag, int vflag)
   ilist = list->ilist; // local index of local atoms
   numneigh = list->numneigh; // number of neighbors of local atoms (dimension inum)
   firstneigh = list->firstneigh; // pointer array to first neighbors of local atoms (dimension inum)
-
-  if (debug) std::cout << "Entered PairRUNNER::compute" << std::endl;
 
   // Calculate total number of neighbors
   int numneighSum = 0;
@@ -165,12 +168,12 @@ void PairRUNNER::compute(int eflag, int vflag)
     {
       j = jlist[jj]; // index of neighbor jj
       j &= NEIGHMASK; // masks bits, which encode pair information
-      if (jj == 0) runnerFirstNeighbor[ii] = irunner + 1;
+      if (jj == 0) runnerFirstNeighbor[ii] = irunner + 1; // plus one due to Fortran
       runnerJList[irunner] = j;
       irunner++; // runs till numNeighSum
     }
   }
-  // collect atomic numbers of all atoms
+  // collect atomic numbers of all atoms by converting element id to atomic number using map
   for (ii = 0; ii < ntotal; ii++) runnerTypes[ii] = map[type[ii]];
 
   // get lattice parameters
@@ -184,31 +187,42 @@ void PairRUNNER::compute(int eflag, int vflag)
   lattice[7] = domain->yz;
   lattice[8] = domain->zprd;
 
-  if (debug) std::cout << "call runner interface" << std::endl;
+  if (debug) std::cout << "Transfer atoms and neighbor lists to RuNNer interface" << std::endl;
 
   runner_lammps_interface_transfer_atoms_and_neighbor_lists(&nlocal, &nghost, runnerTypes, &inum,
     &numneighSum, ilist, runnerNumNeigh, runnerFirstNeighbor, runnerJList, lattice, &x[0][0], &lperiodic);
+
+  if (debug) std::cout << "RuNNer short-range predicition" << std::endl;
 
   runner_lammps_interface_short_range(&nlocal, &nghost, &inum, ilist,
     &runnerEnergy, runnerLocalE, runnerStress, runnerLocalStress,
     runnerForce, hirshVolume, &hirshVolumeGradient[0][0], atCharge, elecNegativity);
 
-  if (debug) std::cout << "Returned from RuNNer" << std::endl;
-
   if (lHirshVolume)
   {
-    cfstyle = COMMHIRSHVOLUME;
+    if (debug) std::cout << "RuNNer long-range vdW interactions" << std::endl;
+
+    // communicate Hirshfeld volumes from local atoms to ghost atoms
+    commstyle = COMMHIRSHVOLUME;
     comm->forward_comm(this);
+
+    // communicate Hirshfeld volume gradients if requested
     if (lHirshVolumeGradient)
     {
-      // Communication has to be done component wise because size of per-atom buffer needs to be set to 1.
-      cfstyle = COMMHIRSHGRADIENTX;
+      // Communication has to be done component wise because size of per-atom buffer is set to 1.
+      commstyle = COMMHIRSHGRADIENTX;
+      comm->reverse_comm(this); // collect contributions of ghost atoms to local atoms
+      comm->forward_comm(this); // communicate updated local atom information to ghost atoms
+
+      commstyle = COMMHIRSHGRADIENTY;
+      comm->reverse_comm(this);
       comm->forward_comm(this);
-      cfstyle = COMMHIRSHGRADIENTY;
-      comm->forward_comm(this);
-      cfstyle = COMMHIRSHGRADIENTZ;
+
+      commstyle = COMMHIRSHGRADIENTZ;
+      comm->reverse_comm(this);
       comm->forward_comm(this);
     }
+    // calculate dispersion energies and forces using Hirshfeld volumes (and gradient)
     runner_lammps_interface_hirshfeld_vdw(&nlocal, &nghost, &inum, ilist,
       hirshVolume, &hirshVolumeGradient[0][0], &runnerEnergy, runnerForce);
   }
@@ -329,7 +343,10 @@ void PairRUNNER::coeff(int narg, char **arg)
 
   if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients");
 
-  // Read model coefficients and do initialization on RuNNer side, return cutoff for LAMMPS neighborlist
+  // Read model coefficients and do initialization on RuNNer side.
+  // Returns max cutoff for LAMMPS neighborlist.
+  // Also returns booleans if additional atomic properties are predicted,
+  // which need to be communicated between local and ghost atoms.
   std::string finputnn = "input.nn";
   int n_input_nn_len = strlen(finputnn.c_str());
   runner_lammps_interface_init(finputnn.c_str(),&n_input_nn_len, &cutoff,
@@ -342,7 +359,8 @@ void PairRUNNER::coeff(int narg, char **arg)
 void PairRUNNER::init_style()
 {
   // Require newton pair on
-  // Switches reverse communication on, which adds data from ghost atoms to corresponding local atoms
+  // Switches reverse communication on on every time step, which adds data
+  // from ghost atoms to corresponding local atoms
   // Required for RuNNer forces
   if (force->newton_pair != 1) error->all(FLERR, "Pair style runner requires newton pair on");
 
@@ -363,11 +381,13 @@ double PairRUNNER::init_one(int /*i*/, int /*j*/)
 /* ----------------------------------------------------------------------
    communication between local and ghost atoms
 ------------------------------------------------------------------------- */
+
+// pack local atom information into communication buffer.
 int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
 {
   int i,j,m;
 
-  if (cfstyle == COMMHIRSHVOLUME)
+  if (commstyle == COMMHIRSHVOLUME)
   {
     m = 0;
     for (i = 0; i < n; i++)
@@ -376,7 +396,7 @@ int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, i
       buf[m++] = hirshVolume[j];
     }
   }
-  else if (cfstyle == COMMHIRSHGRADIENTX)
+  else if (commstyle == COMMHIRSHGRADIENTX)
   {
     m = 0;
     for (i = 0; i < n; i++)
@@ -385,7 +405,7 @@ int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, i
       buf[m++] = hirshVolumeGradient[j][0];
     }
   }
-  else if (cfstyle == COMMHIRSHGRADIENTY)
+  else if (commstyle == COMMHIRSHGRADIENTY)
   {
     m = 0;
     for (i = 0; i < n; i++)
@@ -394,7 +414,7 @@ int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, i
       buf[m++] = hirshVolumeGradient[j][1];
     }
   }
-  else if (cfstyle == COMMHIRSHGRADIENTZ)
+  else if (commstyle == COMMHIRSHGRADIENTZ)
   {
     m = 0;
     for (i = 0; i < n; i++)
@@ -403,7 +423,7 @@ int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, i
       buf[m++] = hirshVolumeGradient[j][2];
     }
   }
-  else if (cfstyle == COMMATCHARGE)
+  else if (commstyle == COMMATCHARGE)
   {
     m = 0;
     for (i = 0; i < n; i++)
@@ -412,7 +432,7 @@ int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, i
       buf[m++] = atCharge[j];
     }
   }
-  else if (cfstyle == COMMELECNEGATIVITY)
+  else if (commstyle == COMMELECNEGATIVITY)
   {
     m = 0;
     for (i = 0; i < n; i++)
@@ -425,44 +445,150 @@ int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, i
   return m;
 }
 
+// unpack local atom information from buffer into ghost atom storage.
 void PairRUNNER::unpack_forward_comm(int n, int first, double *buf)
 {
   int i,m,last;
 
-  if (cfstyle == COMMHIRSHVOLUME)
+  if (commstyle == COMMHIRSHVOLUME)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) hirshVolume[i] = buf[m++];
   }
-  else if (cfstyle == COMMHIRSHGRADIENTX)
+  else if (commstyle == COMMHIRSHGRADIENTX)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) hirshVolumeGradient[i][0] = buf[m++];
   }
-  else if (cfstyle == COMMHIRSHGRADIENTY)
+  else if (commstyle == COMMHIRSHGRADIENTY)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) hirshVolumeGradient[i][1] = buf[m++];
   }
-  else if (cfstyle == COMMHIRSHGRADIENTZ)
+  else if (commstyle == COMMHIRSHGRADIENTZ)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) hirshVolumeGradient[i][2] = buf[m++];
   }
-  else if (cfstyle == COMMATCHARGE)
+  else if (commstyle == COMMATCHARGE)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) atCharge[i] = buf[m++];
   }
-  else if (cfstyle == COMMELECNEGATIVITY)
+  else if (commstyle == COMMELECNEGATIVITY)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) elecNegativity[i] = buf[m++];
+  }
+}
+
+// pack ghost atom contributions into communication buffer.
+int PairRUNNER::pack_reverse_comm(int n, int first, double *buf)
+{
+  int i,m,last;
+
+  if (commstyle == COMMHIRSHVOLUME)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) buf[m++] = hirshVolume[i];
+  }
+  else if (commstyle == COMMHIRSHGRADIENTX)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) buf[m++] = hirshVolumeGradient[i][0];
+  }
+  else if (commstyle == COMMHIRSHGRADIENTY)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) buf[m++] = hirshVolumeGradient[i][1];
+  }
+  else if (commstyle == COMMHIRSHGRADIENTZ)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) buf[m++] = hirshVolumeGradient[i][2];
+  }
+  else if (commstyle == COMMATCHARGE)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) buf[m++] = atCharge[i];
+  }
+  else if (commstyle == COMMELECNEGATIVITY)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) buf[m++] = elecNegativity[i];
+  }
+  return m;
+}
+
+// Add ghost atom contributions from communication buffer to local atom.
+void PairRUNNER::unpack_reverse_comm(int n, int *list, double *buf)
+{
+  int i,j,m;
+
+  if (commstyle == COMMHIRSHVOLUME)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      hirshVolume[j] += buf[m++];
+    }
+  }
+  else if (commstyle == COMMHIRSHGRADIENTX)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      hirshVolumeGradient[j][0] +=  buf[m++];
+    }
+  }
+  else if (commstyle == COMMHIRSHGRADIENTY)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      hirshVolumeGradient[j][1] += buf[m++];
+    }
+  }
+  else if (commstyle == COMMHIRSHGRADIENTZ)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      hirshVolumeGradient[j][2] += buf[m++];
+    }
+  }
+  else if (commstyle == COMMATCHARGE)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      atCharge[j] += buf[m++];
+    }
+  }
+  else if (commstyle == COMMELECNEGATIVITY)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      elecNegativity[j] += buf[m++];
+    }
   }
 }

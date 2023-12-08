@@ -48,6 +48,8 @@ class PairRUNNER : public Pair {
 
   int pack_forward_comm(int, int *, double *, int, int *) override;
   void unpack_forward_comm(int, int, double *) override;
+  int pack_reverse_comm(int, int, double *) override;
+  void unpack_reverse_comm(int, int *, double *) override;
 
  private:
   double cutoff;
@@ -59,7 +61,7 @@ class PairRUNNER : public Pair {
   double *atCharge, *hirshVolume, *elecNegativity;
   double **hirshVolumeGradient;
   bool lAtCharge, lElecNegativity, lHirshVolume, lHirshVolumeGradient;
-  int cfstyle, crstyle;
+  int commstyle; // communication flag for forward and reverse communication
   const int COMMATCHARGE = 1;
   const int COMMELECNEGATIVITY = 2;
   const int COMMHIRSHVOLUME = 3;
