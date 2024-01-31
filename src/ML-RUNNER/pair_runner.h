@@ -24,12 +24,12 @@ PairStyle(runner,PairRUNNER);
 
 extern "C" {
 int runner_lammps_api_version();
-void runner_lammps_interface_init(const char *, int *, double *, bool *, bool *, bool *, bool *);
+void runner_lammps_interface_init(const char *, int *, double *, bool *, bool *, bool *);
 void runner_lammps_interface_transfer_atoms_and_neighbor_lists(int *, int *, int *, int *, int *, int *, int *,
    int *, int *, double *, double *, bool *);
 void runner_lammps_interface_short_range(int *, int *, int *, int *,
-   double *, double *, double *, double *, double *, double *, double *, double *, double *);
-void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *, double * , double *);
+   double *, double *, double *, double *, double *, double *, double *, double *);
+void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *, double *);
 }
 
 namespace LAMMPS_NS {
@@ -59,15 +59,11 @@ class PairRUNNER : public Pair {
 
   // additional per-atom arrays
   double *atCharge, *hirshVolume, *elecNegativity;
-  double **hirshVolumeGradient;
-  bool lAtCharge, lElecNegativity, lHirshVolume, lHirshVolumeGradient;
+  bool lAtCharge, lElecNegativity, lHirshVolume;
   int commstyle; // communication flag for forward and reverse communication
   const int COMMATCHARGE = 1;
   const int COMMELECNEGATIVITY = 2;
   const int COMMHIRSHVOLUME = 3;
-  const int COMMHIRSHGRADIENTX = 4;
-  const int COMMHIRSHGRADIENTY = 5;
-  const int COMMHIRSHGRADIENTZ = 6;
 };
 
 }    // namespace LAMMPS_NS
