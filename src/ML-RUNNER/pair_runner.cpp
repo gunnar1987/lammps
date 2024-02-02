@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Gunnar Schmitz, Knut Nikolas Lausch
+   Contributing authors: Knut Nikolas Lausch, Gunnar Schmitz
 
 ------------------------------------------------------------------------- */
 
@@ -102,95 +102,26 @@ void PairRUNNER::compute(int eflag, int vflag)
   tagint *tag = atom->tag; // We currently don't need those
 
   // Interface variables
-  double *runnerLocalE, *runnerForce, *runnerLocalStress, *runnerStress, runnerEnergy, *lattice;
+  double *runnerLocalE, *runnerForce, *runnerLocalStress, *runnerStress, runnerEnergy,
+    runnerElecEnergy, *runnerDE_DQ, *lattice;
   runnerLocalE = new double[ntotal];
   runnerForce = new double[ntotal * 3];
   runnerLocalStress = new double[ntotal * 9];
   runnerStress = new double[9];
+  runnerDE_DQ = new double[ntotal];
   lattice = new double[9];
 
-  /*
-  //////////////////////////// MPI TESTGROUND  /////////////////////////////
-  int size, rank, natoms;
+  // long-range electrostatics
+  double *xyzGlobal;
+  double *qGlobal;
+  int *zGlobal;
+  int nAtoms;
+
+  // MPI
+  int size, rank;
 
   MPI_Comm_size(world, &size);
   MPI_Comm_rank(world, &rank);
-
-  // DON'T FORGET DEALLOCATION WHEN USING NEW !!!
-  int *nlocal_mpi = new int[size];
-  int *nglobal_mpi = new int[size];
-
-  for (i = 0; i < size; i++) nlocal_mpi[i] = 0;
-  natoms = 0;
-
-  inum = list->inum;
-  ilist = list->ilist;
-  nlocal_mpi[rank] = inum;
-
-  MPI_Allreduce(nlocal_mpi, nglobal_mpi, size, MPI_INT, MPI_SUM, world);
-  MPI_Allreduce(&nlocal, &natoms, 1, MPI_INT, MPI_SUM, world);
-
-  if (rank == 0)
-  {
-    for (i = 0; i < size; i++)
-    {
-      std::cout << nglobal_mpi[i] << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "total number of atoms " << natoms << std::endl;
-  }
-
-  int start, end;
-  start = 0;
-  for (i = 0; i < rank; i++) start += nglobal_mpi[i] * 3;
-  end = start + nlocal * 3;
-
-  std::cout << "start " << start << " end " << end << " on "<< rank << std::endl;
-
-  MPI_Barrier(world);
-
-  double *xyz_local = new double[natoms * 3];
-  double *xyz_global = new double[natoms * 3];
-
-  for (i = 0; i < natoms * 3; i++) xyz_local[i] = 0;
-  for (i = 0; i < natoms * 3; i++) xyz_global[i] = 0;
-
-  double xtmp, ytmp, ztmp;
-  for (ii = 0; ii < inum; ii++)
-  {
-    i = ilist[ii];
-    xtmp = x[i][0];
-    ytmp = x[i][1];
-    ztmp = x[i][2];
-    xyz_local[start] = xtmp;
-    xyz_local[start+1] = ytmp;
-    xyz_local[start+2] = ztmp;
-    start += 3;
-  }
-
-  MPI_Reduce(xyz_local, xyz_global, natoms * 3, MPI_DOUBLE, MPI_SUM, 0, world);
-
-  if (rank == 0)
-  {
-    ii = 0;
-    for (i = 0; i < natoms; i++)
-    {
-      std::cout << "ATOM " << i <<" ";
-      for (j = 0; j < 3; j++)
-      {
-        std::cout << xyz_global[ii] << " " ;
-        ii++;
-      }
-    std::cout << std::endl;;
-    }
-  }
-
-  delete [] nlocal_mpi;
-  delete [] nglobal_mpi;
-  delete [] xyz_local;
-  delete [] xyz_global;
-  //////////////////////////// MPI TESTGROUND  /////////////////////////////
-  */
 
   if (debug) std::cout << "Entered PairRUNNER::compute" << std::endl;
 
@@ -287,6 +218,22 @@ void PairRUNNER::compute(int eflag, int vflag)
       hirshVolume, &runnerEnergy, runnerForce);
   }
 
+  if (lAtCharge)
+  {
+    for (ii = 0; ii < ntotal; ii++)
+    {
+      std::cout << atCharge[ii] << "   " << std::endl;
+    }
+    nAtoms = pack_electrostatics(rank, size, inum, ilist, x, atCharge, runnerTypes, xyzGlobal, qGlobal, zGlobal);
+    std::cout << "Number of atoms" << nAtoms << std::endl;
+
+    if (rank == 0)
+    {
+      runner_lammps_interface_electrostatics(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice,
+        &qGlobal[0], &runnerElecEnergy, &runnerDE_DQ[0]);
+    }
+  }
+
    /*
   Copy results from RuNNer back into LAMMPS atom array
   */
@@ -342,8 +289,12 @@ void PairRUNNER::compute(int eflag, int vflag)
   delete[] runnerLocalE;
   delete[] runnerForce;
   delete[] runnerStress;
+  delete[] runnerDE_DQ;
   delete[] runnerLocalStress;
   delete[] lattice;
+  delete[] xyzGlobal;
+  delete[] qGlobal;
+  delete[] zGlobal;
 }
 
 /* ----------------------------------------------------------------------
@@ -411,6 +362,8 @@ void PairRUNNER::coeff(int narg, char **arg)
   int n_input_nn_len = strlen(finputnn.c_str());
   runner_lammps_interface_init(finputnn.c_str(),&n_input_nn_len, &cutoff,
     &lAtCharge, &lElecNegativity, &lHirshVolume);
+
+  std::cout << "lHirshVolume " << lHirshVolume << " lAtCharge " << lAtCharge << std::endl;
 }
 
 /* ----------------------------------------------------------------------
@@ -561,4 +514,122 @@ void PairRUNNER::unpack_reverse_comm(int n, int *list, double *buf)
       elecNegativity[j] += buf[m++];
     }
   }
+}
+
+/* ----------------------------------------------------------------------
+   communication between nodes
+------------------------------------------------------------------------- */
+
+// pack local atom information into one global structure on root.
+int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, double **x,
+  double *atCharge, int * runnerTypes, double * &xyz, double * &q, int * &z)
+{
+  int i, ii, j, k;
+  int natoms;
+
+  // DON'T FORGET DEALLOCATION WHEN USING NEW !!!
+  int *nLocal = new int[size];
+  int *nGlobal = new int[size];
+
+  for (i = 0; i < size; i++) nLocal[i] = 0;
+  natoms = 0;
+
+  nLocal[rank] = inum;
+
+  MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
+  MPI_Allreduce(&inum, &natoms, 1, MPI_INT, MPI_SUM, world);
+
+  if (rank == 0)
+  {
+    for (i = 0; i < size; i++)
+    {
+      std::cout << nGlobal[i] << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "total number of atoms " << natoms << std::endl;
+  }
+
+  int start, end;
+  start = 0;
+  for (i = 0; i < rank; i++) start += nGlobal[i] * 3;
+  end = start + inum * 3;
+
+  std::cout << "start positions " << start << " end " << end << " on "<< rank << std::endl;
+
+  MPI_Barrier(world);
+
+  double *xyzLocal = new double[natoms * 3];
+  xyz = new double[natoms * 3];
+
+  for (i = 0; i < natoms * 3; i++) xyzLocal[i] = 0;
+  for (i = 0; i < natoms * 3; i++) xyz[i] = 0;
+
+  double xtmp, ytmp, ztmp;
+  for (ii = 0; ii < inum; ii++)
+  {
+    i = ilist[ii];
+    xtmp = x[i][0];
+    ytmp = x[i][1];
+    ztmp = x[i][2];
+    xyzLocal[start] = xtmp;
+    xyzLocal[start+1] = ytmp;
+    xyzLocal[start+2] = ztmp;
+    start += 3;
+  }
+
+  MPI_Reduce(xyzLocal, xyz, natoms * 3, MPI_DOUBLE, MPI_SUM, 0, world);
+
+  double *qLocal = new double[natoms];
+  q = new double[natoms];
+  z = new int[natoms];
+  int *zLocal = new int[natoms];
+
+  start = 0;
+  for (i = 0; i < natoms; i++) qLocal[i] = 0;
+  for (i = 0; i < natoms; i++) q[i] = 0;
+  for (i = 0; i < natoms; i++) z[i] = 0;
+  for (i = 0; i < natoms; i++) zLocal[i] = 0;
+  for (i = 0; i < rank; i++) start += nGlobal[i];
+  end = start + inum;
+  std::cout << "start charges " << start << " end " << end << " on "<< rank << std::endl;
+  for (ii = 0; ii < inum; ii++)
+  {
+    i = ilist[ii];
+
+    std::cout << atCharge[ii] << "  " << i << "  on " << rank << std::endl;
+
+    qLocal[start] = atCharge[i];
+    zLocal[start] = runnerTypes[i];
+
+    start += 1;
+  }
+
+  MPI_Reduce(qLocal, q, natoms, MPI_DOUBLE, MPI_SUM, 0, world);
+  MPI_Reduce(zLocal, z, natoms, MPI_INT, MPI_SUM, 0, world);
+
+  if (rank == 0)
+  {
+    ii = 0;
+    k = 0;
+    for (i = 0; i < natoms; i++)
+    {
+      std::cout << "ATOM " << i <<" ";
+      for (j = 0; j < 3; j++)
+      {
+        std::cout << xyz[ii] << " " ;
+        ii++;
+      }
+      std::cout << q[k] <<" " << z[k] << "  ";
+      k ++;
+    std::cout << std::endl;;
+    }
+  }
+
+  delete [] nLocal;
+  delete [] nGlobal;
+  delete [] xyzLocal;
+  delete [] qLocal;
+  delete [] zLocal;
+
+  return natoms;
 }
