@@ -102,26 +102,17 @@ void PairRUNNER::compute(int eflag, int vflag)
   tagint *tag = atom->tag; // We currently don't need those
 
   // Interface variables
-  double *runnerLocalE, *runnerForce, *runnerLocalStress, *runnerStress, runnerEnergy,
-    runnerElecEnergy, *runnerDE_DQ, *lattice;
+  double *runnerLocalE, *runnerForce, *runnerLocalStress, *runnerStress, runnerEnergy, *lattice;
   runnerLocalE = new double[ntotal];
   runnerForce = new double[ntotal * 3];
   runnerLocalStress = new double[ntotal * 9];
   runnerStress = new double[9];
-  runnerDE_DQ = new double[ntotal];
   lattice = new double[9];
-
-  // long-range electrostatics
-  double *xyzGlobal;
-  double *qGlobal;
-  int *zGlobal;
-  int nAtoms;
 
   // MPI
   int size, rank;
-
-  MPI_Comm_size(world, &size);
-  MPI_Comm_rank(world, &rank);
+  rank = comm->me;
+  size = comm->nprocs;
 
   if (debug) std::cout << "Entered PairRUNNER::compute" << std::endl;
 
@@ -220,18 +211,47 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   if (lAtCharge)
   {
-    for (ii = 0; ii < ntotal; ii++)
-    {
-      std::cout << atCharge[ii] << "   " << std::endl;
-    }
+    if (debug) std::cout << "RuNNer long-range electrostatics" << std::endl;
+
+    // long-range electrostatics variables
+    double runnerElecEnergy, *runnerElecForce, *runnerDE_DQ;
+    double *elecForceGlobal;
+    double *DE_DQGlobal;
+    double *xyzGlobal, *qGlobal;
+    int *zGlobal;
+    int nAtoms;
+
+    // pack electrostatics into one global structure
     nAtoms = pack_electrostatics(rank, size, inum, ilist, x, atCharge, runnerTypes, xyzGlobal, qGlobal, zGlobal);
-    std::cout << "Number of atoms" << nAtoms << std::endl;
+    elecForceGlobal = new double[nAtoms * 3];
+    DE_DQGlobal = new double[nAtoms];
 
     if (rank == 0)
     {
+      // calculate long-range electrostatics on root using global structure
       runner_lammps_interface_electrostatics(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice,
-        &qGlobal[0], &runnerElecEnergy, &runnerDE_DQ[0]);
+        &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0], &DE_DQGlobal[0]);
     }
+
+    MPI_Barrier(world);
+
+    // Broadcast and unpack electrostatic results
+    runnerDE_DQ = new double[ntotal];
+    runnerElecForce = new double[ntotal * 3];
+    unpack_electrostatics(rank, size, inum, ilist, nAtoms, ntotal, runnerElecEnergy,
+      elecForceGlobal, DE_DQGlobal, runnerElecForce, runnerDE_DQ);
+
+    // add electrostatics contributions to short-range part
+    runner_lammps_interface_add_electrostatics(&nlocal, &nghost, &inum, ilist,
+      &runnerElecEnergy, runnerElecForce, runnerDE_DQ, &runnerEnergy, runnerForce);
+
+    delete[] elecForceGlobal;
+    delete[] DE_DQGlobal;
+    delete[] runnerElecForce;
+    delete[] runnerDE_DQ;
+    delete[] xyzGlobal; // allocated in pack electrostatics
+    delete[] qGlobal; // allocated in pack electrostatics
+    delete[] zGlobal; // allocated in pack electrostatics
   }
 
    /*
@@ -289,12 +309,8 @@ void PairRUNNER::compute(int eflag, int vflag)
   delete[] runnerLocalE;
   delete[] runnerForce;
   delete[] runnerStress;
-  delete[] runnerDE_DQ;
   delete[] runnerLocalStress;
   delete[] lattice;
-  delete[] xyzGlobal;
-  delete[] qGlobal;
-  delete[] zGlobal;
 }
 
 /* ----------------------------------------------------------------------
@@ -363,7 +379,6 @@ void PairRUNNER::coeff(int narg, char **arg)
   runner_lammps_interface_init(finputnn.c_str(),&n_input_nn_len, &cutoff,
     &lAtCharge, &lElecNegativity, &lHirshVolume);
 
-  std::cout << "lHirshVolume " << lHirshVolume << " lAtCharge " << lAtCharge << std::endl;
 }
 
 /* ----------------------------------------------------------------------
@@ -517,49 +532,36 @@ void PairRUNNER::unpack_reverse_comm(int n, int *list, double *buf)
 }
 
 /* ----------------------------------------------------------------------
-   communication between nodes
+   communication between processes.
 ------------------------------------------------------------------------- */
 
-// pack local atom information into one global structure on root.
+// pack local atom information into one global structure on root for electrostatics calculation.
 int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, double **x,
-  double *atCharge, int * runnerTypes, double * &xyz, double * &q, int * &z)
+  double *atCharge, int *runnerTypes, double * &xyz, double * &q, int * &z)
 {
-  int i, ii, j, k;
+  int i, ii;
+  int start, end;
   int natoms;
 
-  // DON'T FORGET DEALLOCATION WHEN USING NEW !!!
+  // Determine how many local atoms are on each process.
   int *nLocal = new int[size];
   int *nGlobal = new int[size];
-
   for (i = 0; i < size; i++) nLocal[i] = 0;
   natoms = 0;
-
   nLocal[rank] = inum;
-
   MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
+
+  // And how many atoms there are in this structure
   MPI_Allreduce(&inum, &natoms, 1, MPI_INT, MPI_SUM, world);
 
-  if (rank == 0)
-  {
-    for (i = 0; i < size; i++)
-    {
-      std::cout << nGlobal[i] << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "total number of atoms " << natoms << std::endl;
-  }
-
-  int start, end;
+  // Determine array element boundaries for communication of positions on each process.
+  // xyz is a flat array with 3 * natoms elements.
   start = 0;
   for (i = 0; i < rank; i++) start += nGlobal[i] * 3;
   end = start + inum * 3;
 
-  std::cout << "start positions " << start << " end " << end << " on "<< rank << std::endl;
-
-  MPI_Barrier(world);
-
   double *xyzLocal = new double[natoms * 3];
-  xyz = new double[natoms * 3];
+  xyz = new double[natoms * 3]; // function gets a reference to xyz. Needs to be deleted outside function!
 
   for (i = 0; i < natoms * 3; i++) xyzLocal[i] = 0;
   for (i = 0; i < natoms * 3; i++) xyz[i] = 0;
@@ -577,54 +579,42 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
     start += 3;
   }
 
+  MPI_Barrier(world);
+
+  // Communicate local positions to root preocess.
   MPI_Reduce(xyzLocal, xyz, natoms * 3, MPI_DOUBLE, MPI_SUM, 0, world);
 
+  // Communication of atomic charges q and atomic numbers z.
   double *qLocal = new double[natoms];
-  q = new double[natoms];
-  z = new int[natoms];
   int *zLocal = new int[natoms];
+  q = new double[natoms]; // function gets a reference to q. Needs to be deleted outside function!
+  z = new int[natoms]; // function gets a reference to z. Needs to be deleted outside function!
 
-  start = 0;
-  for (i = 0; i < natoms; i++) qLocal[i] = 0;
   for (i = 0; i < natoms; i++) q[i] = 0;
+  for (i = 0; i < natoms; i++) qLocal[i] = 0;
   for (i = 0; i < natoms; i++) z[i] = 0;
   for (i = 0; i < natoms; i++) zLocal[i] = 0;
+
+  // Determine array element boundaries on each process again, since this time
+  // only natoms elements need to be communicated.
+  start = 0;
   for (i = 0; i < rank; i++) start += nGlobal[i];
   end = start + inum;
-  std::cout << "start charges " << start << " end " << end << " on "<< rank << std::endl;
   for (ii = 0; ii < inum; ii++)
   {
     i = ilist[ii];
-
-    std::cout << atCharge[ii] << "  " << i << "  on " << rank << std::endl;
-
     qLocal[start] = atCharge[i];
     zLocal[start] = runnerTypes[i];
-
     start += 1;
   }
+  MPI_Barrier(world);
 
+  // Communicate local charges to root process.
   MPI_Reduce(qLocal, q, natoms, MPI_DOUBLE, MPI_SUM, 0, world);
+  // Communicate local atomic numbers to root process.
   MPI_Reduce(zLocal, z, natoms, MPI_INT, MPI_SUM, 0, world);
 
-  if (rank == 0)
-  {
-    ii = 0;
-    k = 0;
-    for (i = 0; i < natoms; i++)
-    {
-      std::cout << "ATOM " << i <<" ";
-      for (j = 0; j < 3; j++)
-      {
-        std::cout << xyz[ii] << " " ;
-        ii++;
-      }
-      std::cout << q[k] <<" " << z[k] << "  ";
-      k ++;
-    std::cout << std::endl;;
-    }
-  }
-
+  // Deallocation of local arrays.
   delete [] nLocal;
   delete [] nGlobal;
   delete [] xyzLocal;
@@ -632,4 +622,56 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   delete [] zLocal;
 
   return natoms;
+}
+
+// Broadcast electrostatic results of one global structure on root and unpack information into local atom arrays.
+void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist, int nAtoms, int ntotal,
+  double elecEnergy, double * &elecForceGlobal, double * &DE_DQGlobal, double *elecForce, double *DE_DQ)
+{
+  int i, ii;
+  int start;
+
+  // set arrays to zero
+  for (i = 0; i < ntotal * 3; i++) elecForce[i] = 0;
+  for (i = 0; i < ntotal; i++) DE_DQ[i] = 0;
+
+  // Determine how many local atoms are on each process.
+  int *nLocal = new int[size];
+  int *nGlobal = new int[size];
+  for (i = 0; i < size; i++) nLocal[i] = 0;
+  nLocal[rank] = inum;
+  MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
+
+  // Broadcast global electrostatic results
+  MPI_Bcast(&elecEnergy, 1, MPI_DOUBLE, 0, world);
+  MPI_Bcast(elecForceGlobal, nAtoms * 3, MPI_DOUBLE, 0, world);
+  MPI_Bcast(DE_DQGlobal, nAtoms, MPI_DOUBLE, 0, world);
+
+  // Determine starting index for adding global de_dq to local arrays
+  start = 0;
+  for (i = 0; i < rank; i++) start += nGlobal[i];
+
+  for (ii = 0; ii < inum; ii++)
+  {
+    i = ilist[ii];
+    DE_DQ[i] = DE_DQGlobal[start];
+    start++;
+  }
+
+  // Determine starting index for adding global elec_force to local arrays
+  start = 0;
+  for (i = 0; i < rank; i++) start += nGlobal[i] * 3;
+
+  for (ii = 0; ii < inum; ii++)
+  {
+    i = ilist[ii] * 3;
+    elecForce[i] = elecForceGlobal[start];
+    elecForce[i+1] = elecForceGlobal[start+1];
+    elecForce[i+2] = elecForceGlobal[start+2];
+    start += 3;
+  }
+
+  // Deallocation of local arrays.
+  delete [] nLocal;
+  delete [] nGlobal;
 }

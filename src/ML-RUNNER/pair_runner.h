@@ -31,7 +31,9 @@ void runner_lammps_interface_short_range(int *, int *, int *, int *,
    double *, double *, double *, double *, double *, double *, double *, double *);
 void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *, double *);
 void runner_lammps_interface_electrostatics(int *, double *, int *, double *,
-    double *, double *, double*);
+    double *, double *, double*, double*);
+void runner_lammps_interface_add_electrostatics(int *, int *, int *, int*, double *, double *,
+    double *, double *, double *);
 }
 
 namespace LAMMPS_NS {
@@ -53,6 +55,7 @@ class PairRUNNER : public Pair {
   int pack_reverse_comm(int, int, double *) override;
   void unpack_reverse_comm(int, int *, double *) override;
   int pack_electrostatics(int, int, int, int *, double **, double *, int *, double * &, double * &, int * &);
+  void unpack_electrostatics(int, int, int, int *, int, int, double, double * &, double * &, double *, double *);
 
  private:
   double cutoff;
