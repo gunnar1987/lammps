@@ -29,7 +29,8 @@ void runner_lammps_interface_transfer_atoms_and_neighbor_lists(int *, int *, int
    int *, int *, double *, double *, bool *);
 void runner_lammps_interface_short_range(int *, int *, int *, int *,
    double *, double *, double *, double *, double *, double *, double *, double *);
-void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *, double *);
+void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *,
+   double *, double *, double *);
 void runner_lammps_interface_electrostatics(int *, double *, int *, double *,
     double *, double *, double*, double*);
 void runner_lammps_interface_add_electrostatics(int *, int *, int *, int*, double *, double *,
@@ -64,12 +65,13 @@ class PairRUNNER : public Pair {
   int nmax; // allocated size of per-atom arrays
 
   // additional per-atom arrays
-  double *atCharge, *hirshVolume, *elecNegativity;
+  double *atCharge, *hirshVolume, *elecNegativity, *dEdQ;
   bool lAtCharge, lElecNegativity, lHirshVolume;
   int commstyle; // communication flag for forward and reverse communication
   const int COMMATCHARGE = 1;
   const int COMMELECNEGATIVITY = 2;
   const int COMMHIRSHVOLUME = 3;
+  const int COMMDEDQ = 4;
 };
 
 }    // namespace LAMMPS_NS
