@@ -32,9 +32,9 @@ void runner_lammps_interface_short_range(int *, int *, int *, int *,
 void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *,
    double *, double *, double *);
 void runner_lammps_interface_electrostatics(int *, double *, int *, double *,
-    double *, double *, double*, double*);
+    double *, double *, double*, double*, double *, double *);
 void runner_lammps_interface_add_electrostatics(int *, int *, int *, int*, double *, double *,
-    double *, double *, double *);
+    double *, double *, double *, double *, double *);
 }
 
 namespace LAMMPS_NS {

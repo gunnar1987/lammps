@@ -110,6 +110,13 @@ void PairRUNNER::compute(int eflag, int vflag)
   runnerVirial = new double[9];
   lattice = new double[9];
 
+  // Set interface variables to zero
+  runnerEnergy = 0.0;
+  memset(runnerLocalE, 0.0, ntotal * (sizeof *runnerLocalE));
+  memset(runnerForce, 0.0, (ntotal * 3) * (sizeof *runnerForce));
+  memset(runnerLocalVirial, 0.0, (ntotal * 9) * (sizeof *runnerLocalVirial));
+  memset(runnerVirial, 0.0, 9 * (sizeof * runnerVirial));
+
   // MPI
   int size, rank;
   rank = comm->me;
@@ -132,13 +139,10 @@ void PairRUNNER::compute(int eflag, int vflag)
   }
 
   // Set additional per-atom arrays to zero
-  for (i = 0; i < nmax; i++)
-  {
-    atCharge[i] = 0.0;
-    hirshVolume[i] = 0.0;
-    elecNegativity[i] = 0.0;
-    dEdQ[i] = 0.0;
-  }
+  memset(atCharge, 0.0, nmax * (sizeof *atCharge));
+  memset(hirshVolume, 0.0, nmax * (sizeof *atCharge));
+  memset(elecNegativity, 0.0, nmax * (sizeof *elecNegativity));
+  memset(dEdQ, 0.0, nmax * (sizeof *dEdQ));
 
   // Neighborlist information
   inum = list->inum; // number of local atoms
@@ -234,7 +238,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     {
       // calculate long-range electrostatics on root using global structure
       runner_lammps_interface_electrostatics(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice,
-        &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0], &dEdQGlobal[0]);
+        &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0], &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
     }
 
     MPI_Barrier(world);
@@ -246,7 +250,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // add electrostatics contributions to short-range part
     runner_lammps_interface_add_electrostatics(&nlocal, &nghost, &inum, ilist,
-      &runnerElecEnergy, runnerElecForce, dEdQ, &runnerEnergy, runnerForce);
+      &runnerElecEnergy, runnerElecForce, dEdQ, &runnerEnergy, runnerForce, runnerVirial, runnerLocalVirial);
 
     delete[] elecForceGlobal;
     delete[] dEdQGlobal;
@@ -579,7 +583,8 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   // Determine how many local atoms are on each process.
   int *nLocal = new int[size];
   int *nGlobal = new int[size];
-  for (i = 0; i < size; i++) nLocal[i] = 0;
+  memset(nLocal, 0, size * (sizeof *nLocal));
+  memset(nGlobal, 0, size * (sizeof *nGlobal));
   natoms = 0;
   nLocal[rank] = inum;
   MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
@@ -596,8 +601,8 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   double *xyzLocal = new double[natoms * 3];
   xyzGlobal = new double[natoms * 3]; // function gets a reference to xyz. Needs to be deleted outside function!
 
-  for (i = 0; i < natoms * 3; i++) xyzLocal[i] = 0;
-  for (i = 0; i < natoms * 3; i++) xyzGlobal[i] = 0;
+  memset(xyzLocal, 0, (natoms * 3) * (sizeof *xyzLocal));
+  memset(xyzGlobal, 0, (natoms * 3) * (sizeof *xyzGlobal));
 
   double xtmp, ytmp, ztmp;
   for (ii = 0; ii < inum; ii++)
@@ -623,10 +628,10 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   qGlobal = new double[natoms]; // function gets a reference to q. Needs to be deleted outside function!
   zGlobal = new int[natoms]; // function gets a reference to z. Needs to be deleted outside function!
 
-  for (i = 0; i < natoms; i++) qGlobal[i] = 0;
-  for (i = 0; i < natoms; i++) qLocal[i] = 0;
-  for (i = 0; i < natoms; i++) zGlobal[i] = 0;
-  for (i = 0; i < natoms; i++) zLocal[i] = 0;
+  memset(qGlobal, 0.0, natoms * (sizeof *qGlobal));
+  memset(qLocal, 0.0, natoms * (sizeof *qLocal));
+  memset(zGlobal, 0.0, natoms * (sizeof *zGlobal));
+  memset(zLocal, 0.0, natoms * (sizeof *zLocal));
 
   // Determine array element boundaries on each process again, since this time
   // only natoms elements need to be communicated.
@@ -671,7 +676,8 @@ void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist,
   // Determine how many local atoms are on each process.
   int *nLocal = new int[size];
   int *nGlobal = new int[size];
-  for (i = 0; i < size; i++) nLocal[i] = 0;
+  memset(nLocal, 0, size * (sizeof *nLocal));
+  memset(nGlobal, 0, size * (sizeof *nGlobal));
   nLocal[rank] = inum;
   MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
 
