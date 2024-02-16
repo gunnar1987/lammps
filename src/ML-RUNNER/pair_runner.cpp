@@ -203,7 +203,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     &runnerEnergy, runnerLocalE, runnerVirial, runnerLocalVirial,
     runnerForce, hirshVolume, atCharge, elecNegativity);
 
-  if (lHirshVolume)
+  if (lHirshfeldVdw)
   {
     if (debug) std::cout << "RuNNer long-range vdW interactions" << std::endl;
 
@@ -217,7 +217,7 @@ void PairRUNNER::compute(int eflag, int vflag)
       hirshVolume, &runnerEnergy, runnerForce, runnerVirial, runnerLocalVirial);
   }
 
-  if (lAtCharge)
+  if (nnpGeneration == 3)
   {
     if (debug) std::cout << "RuNNer long-range electrostatics" << std::endl;
 
@@ -384,7 +384,7 @@ void PairRUNNER::coeff(int narg, char **arg)
   std::string finputnn = "input.nn";
   int n_input_nn_len = strlen(finputnn.c_str());
   runner_lammps_interface_init(finputnn.c_str(),&n_input_nn_len, &cutoff,
-    &lAtCharge, &lElecNegativity, &lHirshVolume);
+    &comm->me, &nnpGeneration, &lHirshfeldVdw);
 
 }
 
