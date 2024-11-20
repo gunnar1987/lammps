@@ -382,8 +382,8 @@ void PairRUNNER::coeff(int narg, char **arg)
   // Also returns booleans if additional atomic properties are predicted,
   // which need to be communicated between local and ghost atoms.
   std::string path = "." // TODO: get path from LAMMPS
-  int n_path_len = strlen(finputnn.c_str());
-  runner_lammps_interface_init(finputnn.c_str(),&n_path_len, &cutoff,
+  int n_path_len = strlen(path.c_str());
+  runner_lammps_interface_init(path.c_str(),&n_path_len, &cutoff,
     &comm->me, &nnpGeneration, &lHirshfeldVdw);
 
 }
