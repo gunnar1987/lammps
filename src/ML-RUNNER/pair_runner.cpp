@@ -83,7 +83,7 @@ PairRUNNER::~PairRUNNER()
 ------------------------------------------------------------------------- */
 void PairRUNNER::compute(int eflag, int vflag)
 {
-  const bool debug = false;
+  const bool debug = true;
   bool lperiodic = true; // How to get this information in LAMMPS?
 
   int inum, jnum, ii, jj, i, j;
@@ -229,6 +229,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     int *zGlobal;
     int nAtoms;
 
+
     // pack electrostatics into one global structure
     nAtoms = pack_electrostatics(rank, size, inum, ilist, x, atCharge, runnerTypes, xyzGlobal, qGlobal, zGlobal);
     elecForceGlobal = new double[nAtoms * 3];
@@ -237,7 +238,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     if (rank == 0)
     {
       // calculate long-range electrostatics on root using global structure
-      runner_lammps_interface_electrostatics(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice,
+      runner_lammps_interface_electrostatics(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice, &lperiodic,
         &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0], &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
     }
 
@@ -245,12 +246,16 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // Broadcast and unpack electrostatic results
     runnerElecForce = new double[ntotal * 3];
-    unpack_electrostatics(rank, size, inum, ilist, nAtoms, ntotal, runnerElecEnergy,
-      elecForceGlobal, dEdQGlobal, runnerElecForce, dEdQ);
+    unpack_electrostatics(rank, size, inum, ilist, nAtoms, ntotal, runnerElecEnergy, qGlobal,
+      elecForceGlobal, dEdQGlobal, runnerElecForce, atCharge, dEdQ);
+
+    // communicate scaled atomic charges from local atoms to ghost atoms for screening calculation
+    commstyle = COMMATCHARGE;
+    comm->forward_comm(this);
 
     // add electrostatics contributions to short-range part
     runner_lammps_interface_add_electrostatics(&nlocal, &nghost, &inum, ilist,
-      &runnerElecEnergy, runnerElecForce, dEdQ, &runnerEnergy, runnerForce, runnerVirial, runnerLocalVirial);
+      &runnerElecEnergy, runnerElecForce, atCharge, dEdQ, &runnerEnergy, runnerForce, runnerVirial, runnerLocalVirial);
 
     delete[] elecForceGlobal;
     delete[] dEdQGlobal;
@@ -664,7 +669,8 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
 
 // Broadcast electrostatic results of one global structure on root and unpack information into local atom arrays.
 void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist, int nAtoms, int ntotal,
-  double elecEnergy, double * &elecForceGlobal, double * &dEdQGlobal, double *elecForce, double *dEdQ)
+  double elecEnergy, double * &qGlobal, double * &elecForceGlobal, double * &dEdQGlobal,
+  double *elecForce, double *atCharge, double *dEdQ)
 {
   int i, ii;
   int start;
@@ -682,6 +688,7 @@ void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist,
   MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
 
   // Broadcast global electrostatic results
+  MPI_Bcast(qGlobal, nAtoms, MPI_DOUBLE, 0, world);
   MPI_Bcast(&elecEnergy, 1, MPI_DOUBLE, 0, world);
   MPI_Bcast(elecForceGlobal, nAtoms * 3, MPI_DOUBLE, 0, world);
   MPI_Bcast(dEdQGlobal, nAtoms, MPI_DOUBLE, 0, world);
@@ -694,6 +701,7 @@ void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist,
   {
     i = ilist[ii];
     dEdQ[i] = dEdQGlobal[start];
+    atCharge[i] = qGlobal[start];
     start++;
   }
 
