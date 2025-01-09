@@ -33,8 +33,9 @@ void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *,
    double *, double *, double *);
 void runner_lammps_interface_electrostatics(int *, double *, int *, double *, bool *,
     double *, double *, double*, double*, double *, double *);
-void runner_lammps_interface_add_electrostatics(int *, int *, int *, int*, double *, double *,
-    double *, double *, double *, double *, double *, double *);
+void runner_lammps_interface_add_electrostatics_3g(int *, int *, double *, double *,
+    double *, double *, double *, double *, double *);
+void runner_interface_apply_screening(int *, int *, double *, double *, double *, double *, double *);
 }
 
 namespace LAMMPS_NS {
@@ -58,6 +59,8 @@ class PairRUNNER : public Pair {
   int pack_electrostatics(int, int, int, int *, double **, double *, int *, double * &, double * &, int * &);
   void unpack_electrostatics(int, int, int, int *, int, int, double, double * &, double * &,
    double * &, double *, double *, double *);
+  void determineScreeningChargeConstraintAndApplyToElectrostatics(int, int *, int, int, double *,
+   double *, double *, double *, double *, double *);
 
  private:
   double cutoff;
@@ -66,7 +69,7 @@ class PairRUNNER : public Pair {
   int nmax; // allocated size of per-atom arrays
 
   // additional per-atom arrays
-  double *atCharge, *hirshVolume, *elecNegativity, *dEdQ;
+  double *atCharge, *hirshVolume, *elecNegativity, *dEdQ, *screeningDEdQ;
   bool lHirshfeldVdw;
   int nnpGeneration;
   int commstyle; // communication flag for forward and reverse communication
@@ -74,6 +77,7 @@ class PairRUNNER : public Pair {
   const int COMMELECNEGATIVITY = 2;
   const int COMMHIRSHVOLUME = 3;
   const int COMMDEDQ = 4;
+  const int COMMSCREENING = 5;
 };
 
 }    // namespace LAMMPS_NS

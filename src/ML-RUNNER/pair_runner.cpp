@@ -56,6 +56,7 @@ PairRUNNER::PairRUNNER(LAMMPS *lmp) : Pair(lmp)
   hirshVolume = nullptr;
   elecNegativity = nullptr;
   dEdQ = nullptr;
+  screeningDEdQ = nullptr;
   comm_forward = 1; // forward communication (1 double per atom)
   comm_reverse = 1; // reverse communication (1 double per atom)
   commstyle = 0;
@@ -74,6 +75,7 @@ PairRUNNER::~PairRUNNER()
     memory->destroy(hirshVolume);
     memory->destroy(elecNegativity);
     memory->destroy(dEdQ);
+    memory->destroy(screeningDEdQ);
     delete[] map;
   }
 }
@@ -130,12 +132,14 @@ void PairRUNNER::compute(int eflag, int vflag)
     memory->destroy(hirshVolume);
     memory->destroy(elecNegativity);
     memory->destroy(dEdQ);
+    memory->destroy(screeningDEdQ);
     nmax = atom->nmax;
 
     memory->create(atCharge,nmax,"pair:atCharge");
     memory->create(hirshVolume,nmax,"pair:hirshVolume");
     memory->create(elecNegativity,nmax,"pair:elecNegativity");
     memory->create(dEdQ, nmax, "pair:dEdQ");
+    memory->create(screeningDEdQ, nmax, "pair:screeningDEdQ");
   }
 
   // Set additional per-atom arrays to zero
@@ -143,6 +147,7 @@ void PairRUNNER::compute(int eflag, int vflag)
   memset(hirshVolume, 0.0, nmax * (sizeof *atCharge));
   memset(elecNegativity, 0.0, nmax * (sizeof *elecNegativity));
   memset(dEdQ, 0.0, nmax * (sizeof *dEdQ));
+  memset(screeningDEdQ, 0.0, nmax * (sizeof *screeningDEdQ));
 
   // Neighborlist information
   inum = list->inum; // number of local atoms
@@ -226,6 +231,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     double *elecForceGlobal;
     double *dEdQGlobal;
     double *xyzGlobal, *qGlobal;
+    double screeningEnergy, *screeningForces, *screeningVirial;
     int *zGlobal;
     int nAtoms;
 
@@ -253,13 +259,30 @@ void PairRUNNER::compute(int eflag, int vflag)
     commstyle = COMMATCHARGE;
     comm->forward_comm(this);
 
+    // Apply screening
+    screeningForces = new double[ntotal * 3];
+    screeningVirial = new double[9];
+    runner_interface_apply_screening(&nlocal, &nghost, atCharge, &screeningEnergy, screeningForces,
+      screeningDEdQ, screeningVirial);
+
+    // communicate screening dEdQ from ghost atoms to local atoms
+    commstyle = COMMSCREENING;
+    comm->reverse_comm(this);
+
+    // determine screening charge constraint (requires global information) and add screening
+    // contribution to electrostatic dEdQ, forces and virial
+    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, nAtoms, ntotal,
+      screeningForces, runnerElecForce, dEdQ, screeningDEdQ, runnerVirial, screeningVirial);
+
     // add electrostatics contributions to short-range part
-    runner_lammps_interface_add_electrostatics(&nlocal, &nghost, &inum, ilist,
-      &runnerElecEnergy, runnerElecForce, atCharge, dEdQ, &runnerEnergy, runnerForce, runnerVirial, runnerLocalVirial);
+    runner_lammps_interface_add_electrostatics_3g(&nlocal, &nghost, &runnerElecEnergy,
+      runnerElecForce, dEdQ, &runnerEnergy, runnerForce, runnerVirial, runnerLocalVirial);
 
     delete[] elecForceGlobal;
     delete[] dEdQGlobal;
     delete[] runnerElecForce;
+    delete[] screeningForces;
+    delete[] screeningVirial;
     delete[] xyzGlobal; // allocated in pack electrostatics
     delete[] qGlobal; // allocated in pack electrostatics
     delete[] zGlobal; // allocated in pack electrostatics
@@ -463,6 +486,15 @@ int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, i
       buf[m++] = dEdQ[j];
     }
   }
+  else if (commstyle == COMMSCREENING)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      buf[m++] = screeningDEdQ[j];
+    }
+  }
 
   return m;
 }
@@ -496,6 +528,12 @@ void PairRUNNER::unpack_forward_comm(int n, int first, double *buf)
     last = first + n;
     for (i = first; i < last; i++) dEdQ[i] = buf[m++];
   }
+  else if (commstyle == COMMSCREENING)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) screeningDEdQ[i] = buf[m++];
+  }
 }
 
 // pack ghost atom contributions into communication buffer.
@@ -527,6 +565,13 @@ int PairRUNNER::pack_reverse_comm(int n, int first, double *buf)
     last = first + n;
     for (i = first; i < last; i++) buf[m++] = dEdQ[i];
   }
+  else if (commstyle == COMMSCREENING)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) buf[m++] = screeningDEdQ[i];
+  }
+
   return m;
 }
 
@@ -569,6 +614,15 @@ void PairRUNNER::unpack_reverse_comm(int n, int *list, double *buf)
     {
       j = list[i];
       dEdQ[j] += buf[m++];
+    }
+  }
+  else if (commstyle == COMMSCREENING)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      screeningDEdQ[j] += buf[m++];
     }
   }
 }
@@ -721,4 +775,49 @@ void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist,
   // Deallocation of local arrays.
   delete [] nLocal;
   delete [] nGlobal;
+}
+
+// determine contribution of charge constraint to screened interactions. Requires communication and
+// is therefore determined and applied here and not in RuNNer 2 lib.
+void PairRUNNER::determineScreeningChargeConstraintAndApplyToElectrostatics(int inum, int *ilist,
+  int nAtoms, int ntotal, double *screeningForce, double *elecForce,
+  double *dEdQ, double* screeningDEdQ, double *Virial, double *screeningVirial
+)
+{
+
+    double dEdQSumLocal = 0.0;
+    double dEdQSumGlobal = 0.0;
+    int i, ii, jj;
+
+    // Project dEdQ to the total charge constraint (num_atoms - 1) hypersurface.
+    // Determine sum of screening dEdQ of local atoms across all procs
+    for (i = 0; i < inum; i++)
+    {
+      ii = ilist[i];
+      dEdQSumLocal += screeningDEdQ[ii];
+    }
+    MPI_Allreduce(&dEdQSumLocal, &dEdQSumGlobal, 1, MPI_DOUBLE, MPI_SUM, world);
+
+    // Apply to electrostatics dEdQ
+    for (ii = 0; ii < inum; ii++)
+    {
+      i = ilist[ii];
+      dEdQ[i] -= screeningDEdQ[i] - (dEdQSumGlobal - 0.0) / (double)nAtoms;
+      // ATTENTION: hardcoded to charge neutral system atm
+    }
+
+    // add screening contribution to electrostatic forces
+    i = 0;
+    for (ii = 0; ii < ntotal; ii++)
+    {
+      for (jj = 0; jj < 3; jj++)
+      {
+        elecForce[i] -= screeningForce[i];
+        i++;
+      }
+    }
+
+    // add screening contribution to virial
+    for (i = 0; i < 9; i++) Virial[i] -= screeningVirial[i];
+
 }
