@@ -87,7 +87,7 @@ PairRUNNER::~PairRUNNER()
 ------------------------------------------------------------------------- */
 void PairRUNNER::compute(int eflag, int vflag)
 {
-  const bool debug = true;
+  const bool debug = false;
   bool lperiodic = true; // How to get this information in LAMMPS?
 
   int inum, jnum, ii, jj, i, j;
@@ -304,7 +304,6 @@ void PairRUNNER::compute(int eflag, int vflag)
     double *screeningForces, *screeningVirial;
     int *zGlobal;
     int nAtoms;
-
 
     // pack electrostatics into one global structure
     nAtoms = pack_electrostatics(rank, size, inum, ilist, x, elecNegativity, runnerTypes,
