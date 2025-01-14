@@ -31,10 +31,16 @@ void runner_lammps_interface_short_range(int *, int *, int *, int *,
    double *, double *, double *, double *, double *, double *, double *, double *);
 void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *,
    double *, double *, double *);
-void runner_lammps_interface_electrostatics(int *, double *, int *, double *, bool *,
+void runner_lammps_interface_electrostatics_3g(int *, double *, int *, double *, bool *,
     double *, double *, double*, double*, double *, double *);
 void runner_lammps_interface_add_electrostatics_3g(int *, int *, double *, double *,
     double *, double *, double *, double *, double *);
+void runner_lammps_interface_electrostatics_4g(int *, double *, int *, double *, bool *, double *,
+    double *, double *, double*, double*, double *, double *);
+void runner_lammps_interface_short_range_4g(int *, int *, int *, int *, double *, double *,
+    double *, double *, double *, double *, double *);
+void runner_lammps_interface_force_trick_part_1(int *, double *, double *, double *, double *, double *);
+void runner_lammps_interface_force_trick_part_2(int *, int *, double *, double *, double *, double *);
 void runner_interface_apply_screening(int *, int *, double *, double *, double *, double *, double *);
 }
 
@@ -61,6 +67,8 @@ class PairRUNNER : public Pair {
    double * &, double *, double *, double *);
   void determineScreeningChargeConstraintAndApplyToElectrostatics(int, int *, int, int, double *,
    double *, double *, double *, double *, double *);
+  int pack_force_trick(int, int, int, int *, double *, double * &);
+  void unpack_force_trick(int, int, int, int *, int, int, double *, double * &, double *, double * &);
 
  private:
   double cutoff;
@@ -69,7 +77,7 @@ class PairRUNNER : public Pair {
   int nmax; // allocated size of per-atom arrays
 
   // additional per-atom arrays
-  double *atCharge, *hirshVolume, *elecNegativity, *dEdQ, *screeningDEdQ;
+  double *atCharge, *hirshVolume, *elecNegativity, *lambdaCharge, *dEdQ, *screeningDEdQ;
   bool lHirshfeldVdw;
   int nnpGeneration;
   int commstyle; // communication flag for forward and reverse communication
@@ -77,7 +85,8 @@ class PairRUNNER : public Pair {
   const int COMMELECNEGATIVITY = 2;
   const int COMMHIRSHVOLUME = 3;
   const int COMMDEDQ = 4;
-  const int COMMSCREENING = 5;
+  const int COMMSCREENINGDEDQ = 5;
+  const int COMMLAMBDACHARGE = 6;
 };
 
 }    // namespace LAMMPS_NS

@@ -55,6 +55,7 @@ PairRUNNER::PairRUNNER(LAMMPS *lmp) : Pair(lmp)
   atCharge = nullptr;
   hirshVolume = nullptr;
   elecNegativity = nullptr;
+  lambdaCharge = nullptr;
   dEdQ = nullptr;
   screeningDEdQ = nullptr;
   comm_forward = 1; // forward communication (1 double per atom)
@@ -74,6 +75,7 @@ PairRUNNER::~PairRUNNER()
     memory->destroy(atCharge);
     memory->destroy(hirshVolume);
     memory->destroy(elecNegativity);
+    memory->destroy(lambdaCharge);
     memory->destroy(dEdQ);
     memory->destroy(screeningDEdQ);
     delete[] map;
@@ -131,6 +133,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     memory->destroy(atCharge);
     memory->destroy(hirshVolume);
     memory->destroy(elecNegativity);
+    memory->destroy(lambdaCharge);
     memory->destroy(dEdQ);
     memory->destroy(screeningDEdQ);
     nmax = atom->nmax;
@@ -138,6 +141,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     memory->create(atCharge,nmax,"pair:atCharge");
     memory->create(hirshVolume,nmax,"pair:hirshVolume");
     memory->create(elecNegativity,nmax,"pair:elecNegativity");
+    memory->create(lambdaCharge,nmax,"pair:lambdaCharge");
     memory->create(dEdQ, nmax, "pair:dEdQ");
     memory->create(screeningDEdQ, nmax, "pair:screeningDEdQ");
   }
@@ -146,6 +150,7 @@ void PairRUNNER::compute(int eflag, int vflag)
   memset(atCharge, 0.0, nmax * (sizeof *atCharge));
   memset(hirshVolume, 0.0, nmax * (sizeof *atCharge));
   memset(elecNegativity, 0.0, nmax * (sizeof *elecNegativity));
+  memset(lambdaCharge, 0.0, nmax * (sizeof *lambdaCharge));
   memset(dEdQ, 0.0, nmax * (sizeof *dEdQ));
   memset(screeningDEdQ, 0.0, nmax * (sizeof *screeningDEdQ));
 
@@ -224,14 +229,14 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   if (nnpGeneration == 3)
   {
-    if (debug) std::cout << "RuNNer long-range electrostatics" << std::endl;
+    if (debug) std::cout << "RuNNer 3G long-range electrostatics" << std::endl;
 
     // long-range electrostatics variables
     double runnerElecEnergy, *runnerElecForce;
     double *elecForceGlobal;
     double *dEdQGlobal;
     double *xyzGlobal, *qGlobal;
-    double screeningEnergy, *screeningForces, *screeningVirial;
+    double *screeningForces, *screeningVirial;
     int *zGlobal;
     int nAtoms;
 
@@ -244,7 +249,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     if (rank == 0)
     {
       // calculate long-range electrostatics on root using global structure
-      runner_lammps_interface_electrostatics(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice, &lperiodic,
+      runner_lammps_interface_electrostatics_3g(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice, &lperiodic,
         &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0], &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
     }
 
@@ -262,11 +267,11 @@ void PairRUNNER::compute(int eflag, int vflag)
     // Apply screening
     screeningForces = new double[ntotal * 3];
     screeningVirial = new double[9];
-    runner_interface_apply_screening(&nlocal, &nghost, atCharge, &screeningEnergy, screeningForces,
+    runner_interface_apply_screening(&nlocal, &nghost, atCharge, &runnerElecEnergy, screeningForces,
       screeningDEdQ, screeningVirial);
 
     // communicate screening dEdQ from ghost atoms to local atoms
-    commstyle = COMMSCREENING;
+    commstyle = COMMSCREENINGDEDQ;
     comm->reverse_comm(this);
 
     // determine screening charge constraint (requires global information) and add screening
@@ -285,6 +290,119 @@ void PairRUNNER::compute(int eflag, int vflag)
     delete[] screeningVirial;
     delete[] xyzGlobal; // allocated in pack electrostatics
     delete[] qGlobal; // allocated in pack electrostatics
+    delete[] zGlobal; // allocated in pack electrostatics
+  }
+
+  if (nnpGeneration == 4)
+  {
+    if (debug) std::cout << "RuNNer 4G long-range electrostatics" << std::endl;
+    // long-range electrostatics variables
+    double runnerElecEnergy, *runnerElecForce;
+    double *elecForceGlobal;
+    double *dEdQGlobal;
+    double *xyzGlobal, *elecNegativityGlobal, *qGlobal;
+    double *screeningForces, *screeningVirial;
+    int *zGlobal;
+    int nAtoms;
+
+
+    // pack electrostatics into one global structure
+    nAtoms = pack_electrostatics(rank, size, inum, ilist, x, elecNegativity, runnerTypes,
+      xyzGlobal, elecNegativityGlobal, zGlobal);
+    elecForceGlobal = new double[nAtoms * 3];
+    dEdQGlobal = new double[nAtoms];
+    qGlobal = new double[nAtoms]; // these will be the result of qeq
+
+    if (rank == 0)
+    {
+      // calculate long-range electrostatics on root using global structure
+      runner_lammps_interface_electrostatics_4g(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice, &lperiodic,
+        &elecNegativityGlobal[0], &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0],
+          &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
+    }
+
+    if (debug) std::cout << "RuNNer 4G qeq done" << std::endl;
+
+    MPI_Barrier(world);
+
+    // Broadcast and unpack electrostatic results
+    runnerElecForce = new double[ntotal * 3];
+    unpack_electrostatics(rank, size, inum, ilist, nAtoms, ntotal, runnerElecEnergy, qGlobal,
+      elecForceGlobal, dEdQGlobal, runnerElecForce, atCharge, dEdQ);
+
+    // communicate qeq charges from local atoms to ghost atoms for screening calculation
+    commstyle = COMMATCHARGE;
+    comm->forward_comm(this);
+
+    // Apply screening
+    screeningForces = new double[ntotal * 3];
+    screeningVirial = new double[9];
+    runner_interface_apply_screening(&nlocal, &nghost, atCharge, &runnerElecEnergy, screeningForces,
+      screeningDEdQ, screeningVirial);
+
+    // communicate screening dEdQ from ghost atoms to local atoms
+    commstyle = COMMSCREENINGDEDQ;
+    comm->reverse_comm(this);
+
+    // determine screening charge constraint (requires global information) and add screening
+    // contribution to electrostatic dEdQ, forces and virial
+    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, nAtoms, ntotal,
+      screeningForces, runnerElecForce, dEdQ, screeningDEdQ, runnerVirial, screeningVirial);
+
+    // 4g short range prediction using qeq charges as external features.
+    runner_lammps_interface_short_range_4g(&nlocal, &nghost, &inum, ilist, atCharge, &runnerEnergy,
+      runnerLocalE, runnerVirial, runnerLocalVirial, runnerForce, dEdQ);
+
+    // communicate dEdQ from ghost atoms to local atoms for force trick part 1
+    commstyle = COMMDEDQ;
+    comm->reverse_comm(this);
+
+    // pack dEdQ into global structure for determination of lagrange charges
+    pack_force_trick(rank, size, inum, ilist, dEdQ, dEdQGlobal);
+
+    double *lambdaGlobal;
+    double *forceTrickForce;
+    lambdaGlobal = new double[nAtoms]; // Lagrange charges will be result of force trick part 1
+    forceTrickForce = new double[nAtoms * 3];
+
+    if (rank == 0)
+    {
+    // serial step determining lagrange charges and force contribution from global dEdQ
+    runner_lammps_interface_force_trick_part_1(&nAtoms, dEdQGlobal, lambdaGlobal,
+      forceTrickForce, runnerVirial, runnerLocalVirial);
+    }
+
+    MPI_Barrier(world);
+
+    // unpack force trick part 1 results and apply force contribution to runnerForce
+    unpack_force_trick(rank, size, inum, ilist, nAtoms, ntotal, lambdaCharge, lambdaGlobal,
+      runnerElecForce, forceTrickForce);
+
+    // communicate lagrange charges from local atoms to ghost atoms for calculation of force trick part 2
+    commstyle = COMMLAMBDACHARGE;
+    comm->forward_comm(this);
+
+    // Apply remaining force contributions from predicited electronegativities and lagrange charges to forces.
+    runner_lammps_interface_force_trick_part_2(&nlocal, &nghost, lambdaCharge,
+      runnerElecForce, runnerVirial, runnerLocalVirial);
+
+    // Add electrostatic and short range part
+    runnerEnergy += runnerElecEnergy;
+    for (i = 0; i < ntotal * 3; i++)
+    {
+      runnerForce[i] += runnerElecForce[i];
+    }
+
+    delete[] elecForceGlobal;
+    delete[] dEdQGlobal;
+    delete[] qGlobal;
+    delete[] runnerElecForce;
+    delete[] screeningForces;
+    delete[] screeningVirial;
+    delete[] lambdaGlobal;
+    delete[] forceTrickForce;
+    delete[] xyzGlobal; // allocated in pack electrostatics
+    delete[] elecNegativityGlobal; // allocated in pack electrostatics;
     delete[] zGlobal; // allocated in pack electrostatics
   }
 
@@ -334,7 +452,6 @@ void PairRUNNER::compute(int eflag, int vflag)
       iatom += 9;
     }
   }
-
 
   // Deallocate internal arrays
   delete[] runnerTypes;
@@ -486,13 +603,22 @@ int PairRUNNER::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, i
       buf[m++] = dEdQ[j];
     }
   }
-  else if (commstyle == COMMSCREENING)
+  else if (commstyle == COMMSCREENINGDEDQ)
   {
     m = 0;
     for (i = 0; i < n; i++)
     {
       j = list[i];
       buf[m++] = screeningDEdQ[j];
+    }
+  }
+  else if (commstyle == COMMLAMBDACHARGE)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      buf[m++] = lambdaCharge[j];
     }
   }
 
@@ -528,11 +654,17 @@ void PairRUNNER::unpack_forward_comm(int n, int first, double *buf)
     last = first + n;
     for (i = first; i < last; i++) dEdQ[i] = buf[m++];
   }
-  else if (commstyle == COMMSCREENING)
+  else if (commstyle == COMMSCREENINGDEDQ)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) screeningDEdQ[i] = buf[m++];
+  }
+  else if (commstyle == COMMLAMBDACHARGE)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) lambdaCharge[i] = buf[m++];
   }
 }
 
@@ -565,11 +697,17 @@ int PairRUNNER::pack_reverse_comm(int n, int first, double *buf)
     last = first + n;
     for (i = first; i < last; i++) buf[m++] = dEdQ[i];
   }
-  else if (commstyle == COMMSCREENING)
+  else if (commstyle == COMMSCREENINGDEDQ)
   {
     m = 0;
     last = first + n;
     for (i = first; i < last; i++) buf[m++] = screeningDEdQ[i];
+  }
+  else if (commstyle == COMMLAMBDACHARGE)
+  {
+    m = 0;
+    last = first + n;
+    for (i = first; i < last; i++) buf[m++] = lambdaCharge[i];
   }
 
   return m;
@@ -616,13 +754,22 @@ void PairRUNNER::unpack_reverse_comm(int n, int *list, double *buf)
       dEdQ[j] += buf[m++];
     }
   }
-  else if (commstyle == COMMSCREENING)
+  else if (commstyle == COMMSCREENINGDEDQ)
   {
     m = 0;
     for (i = 0; i < n; i++)
     {
       j = list[i];
       screeningDEdQ[j] += buf[m++];
+    }
+  }
+  else if (commstyle == COMMLAMBDACHARGE)
+  {
+    m = 0;
+    for (i = 0; i < n; i++)
+    {
+      j = list[i];
+      lambdaCharge[j] += buf[m++];
     }
   }
 }
@@ -632,8 +779,9 @@ void PairRUNNER::unpack_reverse_comm(int n, int *list, double *buf)
 ------------------------------------------------------------------------- */
 
 // pack local atom information into one global structure on root for electrostatics calculation.
+// For 3G atProperty is the atomic charge, for 4G atomic electronegativity
 int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, double **x,
-  double *atCharge, int *runnerTypes, double * &xyzGlobal, double * &qGlobal, int * &zGlobal)
+  double *atProperty, int *runnerTypes, double * &xyzGlobal, double * &atPropertyGlobal, int * &zGlobal)
 {
   int i, ii;
   int start, end;
@@ -681,14 +829,15 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   // Communicate local positions to root preocess.
   MPI_Reduce(xyzLocal, xyzGlobal, natoms * 3, MPI_DOUBLE, MPI_SUM, 0, world);
 
-  // Communication of atomic charges q and atomic numbers z.
-  double *qLocal = new double[natoms];
+  // Communication of atomic property and atomic numbers z.
+  double *atPropertyLocal = new double[natoms];
   int *zLocal = new int[natoms];
-  qGlobal = new double[natoms]; // function gets a reference to q. Needs to be deleted outside function!
+  atPropertyGlobal = new double[natoms]; // function gets a reference atomic property.
+  // Needs to be deleted outside function!
   zGlobal = new int[natoms]; // function gets a reference to z. Needs to be deleted outside function!
 
-  memset(qGlobal, 0.0, natoms * (sizeof *qGlobal));
-  memset(qLocal, 0.0, natoms * (sizeof *qLocal));
+  memset(atPropertyGlobal, 0.0, natoms * (sizeof *atPropertyGlobal));
+  memset(atPropertyLocal, 0.0, natoms * (sizeof *atPropertyLocal));
   memset(zGlobal, 0.0, natoms * (sizeof *zGlobal));
   memset(zLocal, 0.0, natoms * (sizeof *zLocal));
 
@@ -700,14 +849,14 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   for (ii = 0; ii < inum; ii++)
   {
     i = ilist[ii];
-    qLocal[start] = atCharge[i];
+    atPropertyLocal[start] = atProperty[i];
     zLocal[start] = runnerTypes[i];
     start += 1;
   }
   MPI_Barrier(world);
 
   // Communicate local charges to root process.
-  MPI_Reduce(qLocal, qGlobal, natoms, MPI_DOUBLE, MPI_SUM, 0, world);
+  MPI_Reduce(atPropertyLocal, atPropertyGlobal, natoms, MPI_DOUBLE, MPI_SUM, 0, world);
   // Communicate local atomic numbers to root process.
   MPI_Reduce(zLocal, zGlobal, natoms, MPI_INT, MPI_SUM, 0, world);
 
@@ -715,7 +864,7 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   delete [] nLocal;
   delete [] nGlobal;
   delete [] xyzLocal;
-  delete [] qLocal;
+  delete [] atPropertyLocal;
   delete [] zLocal;
 
   return natoms;
@@ -730,8 +879,8 @@ void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist,
   int start;
 
   // set arrays to zero
-  for (i = 0; i < ntotal * 3; i++) elecForce[i] = 0;
-  for (i = 0; i < ntotal; i++) dEdQ[i] = 0;
+  memset(elecForce, 0, (ntotal * 3) * (sizeof *elecForce));
+  memset(dEdQ, 0, ntotal * (sizeof *dEdQ));
 
   // Determine how many local atoms are on each process.
   int *nLocal = new int[size];
@@ -777,14 +926,116 @@ void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist,
   delete [] nGlobal;
 }
 
+// pack local atom information into one global structure on root for force trick part 1.
+int PairRUNNER::pack_force_trick(int rank, int size, int inum, int *ilist, double *dEdQ, double * &dEdQGlobal)
+{
+  int i, ii;
+  int start, end;
+  int natoms;
+
+  // Determine how many local atoms are on each process.
+  int *nLocal = new int[size];
+  int *nGlobal = new int[size];
+  memset(nLocal, 0, size * (sizeof *nLocal));
+  memset(nGlobal, 0, size * (sizeof *nGlobal));
+  natoms = 0;
+  nLocal[rank] = inum;
+  MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
+
+  // And how many atoms there are in this structure
+  MPI_Allreduce(&inum, &natoms, 1, MPI_INT, MPI_SUM, world);
+
+  // Communication of dEdQ.
+  double *dEdQLocal = new double[natoms];
+
+  memset(dEdQGlobal, 0.0, natoms * (sizeof *dEdQGlobal));
+  memset(dEdQLocal, 0.0, natoms * (sizeof *dEdQLocal));
+
+  // Determine array element boundaries on each process
+  start = 0;
+  for (i = 0; i < rank; i++) start += nGlobal[i];
+  end = start + inum;
+  for (ii = 0; ii < inum; ii++)
+  {
+    i = ilist[ii];
+    dEdQLocal[start] = dEdQ[i];
+    start += 1;
+  }
+  MPI_Barrier(world);
+
+  // Communicate dEdQ to root process.
+  MPI_Reduce(dEdQLocal, dEdQGlobal, natoms, MPI_DOUBLE, MPI_SUM, 0, world);
+
+  // Deallocation of local arrays.
+  delete [] nLocal;
+  delete [] nGlobal;
+  delete [] dEdQLocal;
+
+  return natoms;
+}
+
+// unpack force trick part 1 for force trick part 2
+void PairRUNNER::unpack_force_trick(int rank, int size, int inum, int *ilist, int nAtoms, int ntotal,
+  double *lambdaCharge, double * &lambdaGlobal, double *Force, double * &forceTrickForce)
+{
+  int i, ii;
+  int start;
+
+  // runner_lammps_interface_force_trick_part_1(&nAtoms, dEdQGlobal, lambdaGlobal,
+  // forceTrickForce, forceTrickVirial, forceTrickLocalVirial);
+
+  // set arrays to zero
+  double *ForceLocal = new double[ntotal * 3];
+  memset(ForceLocal, 0, ntotal * 3 * (sizeof *ForceLocal));
+
+  // Determine how many local atoms are on each process.
+  int *nLocal = new int[size];
+  int *nGlobal = new int[size];
+  memset(nLocal, 0, size * (sizeof *nLocal));
+  memset(nGlobal, 0, size * (sizeof *nGlobal));
+  nLocal[rank] = inum;
+  MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
+
+  // Broadcast global force trick part 1 results
+  MPI_Bcast(lambdaGlobal, nAtoms, MPI_DOUBLE, 0, world);
+  MPI_Bcast(forceTrickForce, nAtoms * 3, MPI_DOUBLE, 0, world);
+
+  // Determine starting index for adding global lambda charge to local arrays
+  start = 0;
+  for (i = 0; i < rank; i++) start += nGlobal[i];
+
+  for (ii = 0; ii < inum; ii++)
+  {
+    i = ilist[ii];
+    lambdaCharge[i] = lambdaGlobal[start];
+    start++;
+  }
+
+  // Determine starting index for adding force trick part 1 force contribution to local arrays
+  start = 0;
+  for (i = 0; i < rank; i++) start += nGlobal[i] * 3;
+
+  for (ii = 0; ii < inum; ii++)
+  {
+    i = ilist[ii] * 3;
+    Force[i] -= forceTrickForce[start];
+    Force[i+1] -= forceTrickForce[start+1];
+    Force[i+2] -= forceTrickForce[start+2];
+    start += 3;
+  }
+
+  // Deallocation of local arrays.
+  delete [] nLocal;
+  delete [] nGlobal;
+  delete [] ForceLocal;
+}
+
 // determine contribution of charge constraint to screened interactions. Requires communication and
 // is therefore determined and applied here and not in RuNNer 2 lib.
 void PairRUNNER::determineScreeningChargeConstraintAndApplyToElectrostatics(int inum, int *ilist,
   int nAtoms, int ntotal, double *screeningForce, double *elecForce,
-  double *dEdQ, double* screeningDEdQ, double *Virial, double *screeningVirial
-)
+  double *dEdQ, double* screeningDEdQ, double *Virial, double *screeningVirial)
 {
-
     double dEdQSumLocal = 0.0;
     double dEdQSumGlobal = 0.0;
     int i, ii, jj;
@@ -819,5 +1070,4 @@ void PairRUNNER::determineScreeningChargeConstraintAndApplyToElectrostatics(int 
 
     // add screening contribution to virial
     for (i = 0; i < 9; i++) Virial[i] -= screeningVirial[i];
-
 }
