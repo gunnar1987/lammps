@@ -88,7 +88,6 @@ PairRUNNER::~PairRUNNER()
 void PairRUNNER::compute(int eflag, int vflag)
 {
   const bool debug = false;
-  bool lperiodic = true; // How to get this information in LAMMPS?
 
   int inum, jnum, ii, jj, i, j;
   int *ilist;
@@ -100,6 +99,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   double **x = atom->x;
   double **f = atom->f;
+  double *q = atom->q;
   int nlocal = atom->nlocal;
   int nghost = atom->nghost;
   int ntotal = nlocal + nghost;
@@ -107,6 +107,7 @@ void PairRUNNER::compute(int eflag, int vflag)
   tagint *tag = atom->tag; // We currently don't need those
 
   // Interface variables
+  bool lperiodic;
   double *runnerLocalE, *runnerForce, *runnerLocalVirial, *runnerVirial, runnerEnergy, *lattice;
   runnerLocalE = new double[ntotal];
   runnerForce = new double[ntotal * 3];
@@ -202,6 +203,32 @@ void PairRUNNER::compute(int eflag, int vflag)
   lattice[7] = domain->yz;
   lattice[8] = domain->zprd;
 
+  // get periodicity information
+  switch (domain->periodicity[0] + domain->periodicity[1] + domain->periodicity[2])
+  {
+    case 3 :
+      lperiodic = true;
+      break;
+    case 0 :
+      lperiodic = false;
+      break;
+    default :
+      if (nnpGeneration == 2)
+      {
+        lperiodic = false;
+        break;
+      }
+      else
+      {
+        if (comm->me == 0)
+        {
+          std::cout << "Periodicity in only one or two dimensions not "
+          "supported when using 3G or 4G HDNNPs " << std::endl;
+          MPI_Abort(world, -1);
+        }
+        MPI_Barrier(world);
+      }
+  }
   if (debug) std::cout << "Transfer atoms and neighbor lists to RuNNer interface" << std::endl;
 
   runner_lammps_interface_transfer_atoms_and_neighbor_lists(&nlocal, &nghost, runnerTypes, &inum,
@@ -240,11 +267,14 @@ void PairRUNNER::compute(int eflag, int vflag)
     int *zGlobal;
     int nAtoms;
 
-
     // pack electrostatics into one global structure
     nAtoms = pack_electrostatics(rank, size, inum, ilist, x, atCharge, runnerTypes, xyzGlobal, qGlobal, zGlobal);
+
+    runnerElecEnergy = 0.0;
     elecForceGlobal = new double[nAtoms * 3];
     dEdQGlobal = new double[nAtoms];
+    memset(elecForceGlobal, 0.0, nAtoms * 3 * (sizeof *elecForceGlobal));
+    memset(dEdQGlobal, 0.0, nAtoms * (sizeof *dEdQGlobal));
 
     if (rank == 0)
     {
@@ -308,9 +338,14 @@ void PairRUNNER::compute(int eflag, int vflag)
     // pack electrostatics into one global structure
     nAtoms = pack_electrostatics(rank, size, inum, ilist, x, elecNegativity, runnerTypes,
       xyzGlobal, elecNegativityGlobal, zGlobal);
+
+    runnerElecEnergy = 0.0;
     elecForceGlobal = new double[nAtoms * 3];
     dEdQGlobal = new double[nAtoms];
     qGlobal = new double[nAtoms]; // these will be the result of qeq
+    memset(elecForceGlobal, 0.0, nAtoms * 3 * (sizeof *elecForceGlobal));
+    memset(dEdQGlobal, 0.0, nAtoms * (sizeof *dEdQGlobal));
+    memset(qGlobal, 0.0, nAtoms * (sizeof *qGlobal));
 
     if (rank == 0)
     {
@@ -363,6 +398,8 @@ void PairRUNNER::compute(int eflag, int vflag)
     double *forceTrickForce;
     lambdaGlobal = new double[nAtoms]; // Lagrange charges will be result of force trick part 1
     forceTrickForce = new double[nAtoms * 3];
+    memset(lambdaGlobal, 0.0, nAtoms * (sizeof *lambdaGlobal));
+    memset(forceTrickForce, 0.0, nAtoms * 3 * (sizeof *forceTrickForce));
 
     if (rank == 0)
     {
@@ -425,6 +462,11 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   // Local energy
   if (eflag_atom) for (ii = 0; ii < ntotal; ii++) eatom[ii] = runnerLocalE[ii];
+
+  // Charges if charge atom style is used
+  if (q != NULL){
+    for (ii = 0; ii < ntotal; ii++) q[ii] = atCharge[ii];
+  }
 
   // Stress
   if (vflag_global)
