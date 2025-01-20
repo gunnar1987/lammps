@@ -108,7 +108,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   // Interface variables
   bool lperiodic;
-  double *runnerLocalE, *runnerForce, *runnerLocalVirial, *runnerVirial, runnerEnergy, *lattice;
+  double *runnerLocalE, *runnerForce, *runnerLocalVirial, *runnerVirial, runnerEnergy, *lattice, runnerTotalCharge;
   runnerLocalE = new double[ntotal];
   runnerForce = new double[ntotal * 3];
   runnerLocalVirial = new double[ntotal * 9];
@@ -117,6 +117,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   // Set interface variables to zero
   runnerEnergy = 0.0;
+  runnerTotalCharge = 0.0;
   memset(runnerLocalE, 0.0, ntotal * (sizeof *runnerLocalE));
   memset(runnerForce, 0.0, (ntotal * 3) * (sizeof *runnerForce));
   memset(runnerLocalVirial, 0.0, (ntotal * 9) * (sizeof *runnerLocalVirial));
@@ -279,7 +280,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     if (rank == 0)
     {
       // calculate long-range electrostatics on root using global structure
-      runner_lammps_interface_electrostatics_3g(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice, &lperiodic,
+      runner_lammps_interface_electrostatics_3g(&nAtoms, &xyzGlobal[0], &runnerTotalCharge, &zGlobal[0], lattice, &lperiodic,
         &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0], &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
     }
 
@@ -306,7 +307,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // determine screening charge constraint (requires global information) and add screening
     // contribution to electrostatic dEdQ, forces and virial
-    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, nAtoms, ntotal,
+    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, nAtoms, ntotal, runnerTotalCharge,
       screeningForces, runnerElecForce, dEdQ, screeningDEdQ, runnerVirial, screeningVirial);
 
     // add electrostatics contributions to short-range part
@@ -350,9 +351,9 @@ void PairRUNNER::compute(int eflag, int vflag)
     if (rank == 0)
     {
       // calculate long-range electrostatics on root using global structure
-      runner_lammps_interface_electrostatics_4g(&nAtoms, &xyzGlobal[0], &zGlobal[0], lattice, &lperiodic,
-        &elecNegativityGlobal[0], &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0],
-          &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
+      runner_lammps_interface_electrostatics_4g(&nAtoms, &xyzGlobal[0], &runnerTotalCharge, &zGlobal[0],
+        lattice, &lperiodic, &elecNegativityGlobal[0], &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0],
+        &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
     }
 
     if (debug) std::cout << "RuNNer 4G qeq done" << std::endl;
@@ -380,7 +381,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // determine screening charge constraint (requires global information) and add screening
     // contribution to electrostatic dEdQ, forces and virial
-    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, nAtoms, ntotal,
+    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, nAtoms, ntotal, runnerTotalCharge,
       screeningForces, runnerElecForce, dEdQ, screeningDEdQ, runnerVirial, screeningVirial);
 
     // 4g short range prediction using qeq charges as external features.
@@ -1074,7 +1075,7 @@ void PairRUNNER::unpack_force_trick(int rank, int size, int inum, int *ilist, in
 // determine contribution of charge constraint to screened interactions. Requires communication and
 // is therefore determined and applied here and not in RuNNer 2 lib.
 void PairRUNNER::determineScreeningChargeConstraintAndApplyToElectrostatics(int inum, int *ilist,
-  int nAtoms, int ntotal, double *screeningForce, double *elecForce,
+  int nAtoms, int ntotal, double totalCharge, double *screeningForce, double *elecForce,
   double *dEdQ, double* screeningDEdQ, double *Virial, double *screeningVirial)
 {
     double dEdQSumLocal = 0.0;
@@ -1094,7 +1095,7 @@ void PairRUNNER::determineScreeningChargeConstraintAndApplyToElectrostatics(int 
     for (ii = 0; ii < inum; ii++)
     {
       i = ilist[ii];
-      dEdQ[i] -= screeningDEdQ[i] - (dEdQSumGlobal - 0.0) / (double)nAtoms;
+      dEdQ[i] -= screeningDEdQ[i] - (dEdQSumGlobal - totalCharge) / (double)nAtoms;
       // ATTENTION: hardcoded to charge neutral system atm
     }
 

@@ -31,11 +31,11 @@ void runner_lammps_interface_short_range(int *, int *, int *, int *,
    double *, double *, double *, double *, double *, double *, double *, double *);
 void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *,
    double *, double *, double *);
-void runner_lammps_interface_electrostatics_3g(int *, double *, int *, double *, bool *,
+void runner_lammps_interface_electrostatics_3g(int *, double *, double *, int *, double *, bool *,
     double *, double *, double*, double*, double *, double *);
 void runner_lammps_interface_add_electrostatics_3g(int *, int *, double *, double *,
     double *, double *, double *, double *, double *);
-void runner_lammps_interface_electrostatics_4g(int *, double *, int *, double *, bool *, double *,
+void runner_lammps_interface_electrostatics_4g(int *, double *, double *, int *, double *, bool *, double *,
     double *, double *, double*, double*, double *, double *);
 void runner_lammps_interface_short_range_4g(int *, int *, int *, int *, double *, double *,
     double *, double *, double *, double *, double *);
@@ -65,7 +65,7 @@ class PairRUNNER : public Pair {
   int pack_electrostatics(int, int, int, int *, double **, double *, int *, double * &, double * &, int * &);
   void unpack_electrostatics(int, int, int, int *, int, int, double, double * &, double * &,
    double * &, double *, double *, double *);
-  void determineScreeningChargeConstraintAndApplyToElectrostatics(int, int *, int, int, double *,
+  void determineScreeningChargeConstraintAndApplyToElectrostatics(int, int *, int, int, double, double *,
    double *, double *, double *, double *, double *);
   int pack_force_trick(int, int, int, int *, double *, double * &);
   void unpack_force_trick(int, int, int, int *, int, int, double *, double * &, double *, double * &);
