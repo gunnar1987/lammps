@@ -128,6 +128,16 @@ void PairRUNNER::compute(int eflag, int vflag)
   rank = comm->me;
   size = comm->nprocs;
 
+  if (nlocal == 0)
+  {
+    std::cout << "Error in PairRUNNER. No local atoms on process " << rank << "." << std::endl;
+    std::cout << "Try adjusting simulation box partitioning with the `balance` command" << std::endl;
+    std::cout << "or restart the simulation using fewer processors." << std::endl;
+    MPI_Abort(world, -1);
+  }
+
+  MPI_Barrier(world);
+
   if (debug) std::cout << "Entered PairRUNNER::compute" << std::endl;
 
   // allocate additional per-atom arrays
@@ -369,6 +379,8 @@ void PairRUNNER::compute(int eflag, int vflag)
     commstyle = COMMATCHARGE;
     comm->forward_comm(this);
 
+    if (debug) std::cout << "RuNNer 4G screening" << std::endl;
+
     // Apply screening
     screeningForces = new double[ntotal * 3];
     screeningVirial = new double[9];
@@ -442,6 +454,8 @@ void PairRUNNER::compute(int eflag, int vflag)
     delete[] elecNegativityGlobal; // allocated in pack electrostatics;
     delete[] zGlobal; // allocated in pack electrostatics
   }
+
+  if (debug) std::cout << "Transferring results from RuNNer to LAMMPS" << std::endl;
 
    /*
   Copy results from RuNNer back into LAMMPS atom array
