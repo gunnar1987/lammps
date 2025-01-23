@@ -100,9 +100,10 @@ void PairRUNNER::compute(int eflag, int vflag)
   double **x = atom->x;
   double **f = atom->f;
   double *q = atom->q;
-  int nlocal = atom->nlocal;
-  int nghost = atom->nghost;
+  int nlocal = atom->nlocal; // number of atoms on process
+  int nghost = atom->nghost; // number of ghost atoms on process
   int ntotal = nlocal + nghost;
+  int natoms = static_cast<int>(atom->natoms); // number of atoms in simulation box
   int *type = atom->type;
   tagint *tag = atom->tag; // We currently don't need those
 
@@ -276,21 +277,24 @@ void PairRUNNER::compute(int eflag, int vflag)
     double *xyzGlobal, *qGlobal;
     double *screeningForces, *screeningVirial;
     int *zGlobal;
-    int nAtoms;
+
+    xyzGlobal = new double[natoms * 3];
+    qGlobal = new double[natoms];
+    zGlobal = new int[natoms];
 
     // pack electrostatics into one global structure
-    nAtoms = pack_electrostatics(rank, size, inum, ilist, x, atCharge, runnerTypes, xyzGlobal, qGlobal, zGlobal);
+    pack_electrostatics(rank, size, natoms, inum, ilist, x, atCharge, runnerTypes, xyzGlobal, qGlobal, zGlobal);
 
     runnerElecEnergy = 0.0;
-    elecForceGlobal = new double[nAtoms * 3];
-    dEdQGlobal = new double[nAtoms];
-    memset(elecForceGlobal, 0.0, nAtoms * 3 * (sizeof *elecForceGlobal));
-    memset(dEdQGlobal, 0.0, nAtoms * (sizeof *dEdQGlobal));
+    elecForceGlobal = new double[natoms * 3];
+    dEdQGlobal = new double[natoms];
+    memset(elecForceGlobal, 0.0, natoms * 3 * (sizeof *elecForceGlobal));
+    memset(dEdQGlobal, 0.0, natoms * (sizeof *dEdQGlobal));
 
     if (rank == 0)
     {
       // calculate long-range electrostatics on root using global structure
-      runner_lammps_interface_electrostatics_3g(&nAtoms, &xyzGlobal[0], &runnerTotalCharge, &zGlobal[0], lattice, &lperiodic,
+      runner_lammps_interface_electrostatics_3g(&natoms, &xyzGlobal[0], &runnerTotalCharge, &zGlobal[0], lattice, &lperiodic,
         &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0], &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
     }
 
@@ -298,7 +302,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // Broadcast and unpack electrostatic results
     runnerElecForce = new double[ntotal * 3];
-    unpack_electrostatics(rank, size, inum, ilist, nAtoms, ntotal, runnerElecEnergy, qGlobal,
+    unpack_electrostatics(rank, size, inum, ilist, natoms, ntotal, runnerElecEnergy, qGlobal,
       elecForceGlobal, dEdQGlobal, runnerElecForce, atCharge, dEdQ);
 
     // communicate scaled atomic charges from local atoms to ghost atoms for screening calculation
@@ -317,7 +321,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // determine screening charge constraint (requires global information) and add screening
     // contribution to electrostatic dEdQ, forces and virial
-    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, nAtoms, ntotal, runnerTotalCharge,
+    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, natoms, ntotal, runnerTotalCharge,
       screeningForces, runnerElecForce, dEdQ, screeningDEdQ, runnerVirial, screeningVirial);
 
     // add electrostatics contributions to short-range part
@@ -329,9 +333,9 @@ void PairRUNNER::compute(int eflag, int vflag)
     delete[] runnerElecForce;
     delete[] screeningForces;
     delete[] screeningVirial;
-    delete[] xyzGlobal; // allocated in pack electrostatics
-    delete[] qGlobal; // allocated in pack electrostatics
-    delete[] zGlobal; // allocated in pack electrostatics
+    delete[] xyzGlobal;
+    delete[] qGlobal;
+    delete[] zGlobal;
   }
 
   if (nnpGeneration == 4)
@@ -344,24 +348,27 @@ void PairRUNNER::compute(int eflag, int vflag)
     double *xyzGlobal, *elecNegativityGlobal, *qGlobal;
     double *screeningForces, *screeningVirial;
     int *zGlobal;
-    int nAtoms;
+
+    xyzGlobal = new double[natoms * 3];
+    elecNegativityGlobal= new double[natoms];
+    zGlobal = new int[natoms];
 
     // pack electrostatics into one global structure
-    nAtoms = pack_electrostatics(rank, size, inum, ilist, x, elecNegativity, runnerTypes,
+    pack_electrostatics(rank, size, natoms, inum, ilist, x, elecNegativity, runnerTypes,
       xyzGlobal, elecNegativityGlobal, zGlobal);
 
     runnerElecEnergy = 0.0;
-    elecForceGlobal = new double[nAtoms * 3];
-    dEdQGlobal = new double[nAtoms];
-    qGlobal = new double[nAtoms]; // these will be the result of qeq
-    memset(elecForceGlobal, 0.0, nAtoms * 3 * (sizeof *elecForceGlobal));
-    memset(dEdQGlobal, 0.0, nAtoms * (sizeof *dEdQGlobal));
-    memset(qGlobal, 0.0, nAtoms * (sizeof *qGlobal));
+    elecForceGlobal = new double[natoms * 3];
+    dEdQGlobal = new double[natoms];
+    qGlobal = new double[natoms]; // these will be the result of qeq
+    memset(elecForceGlobal, 0.0, natoms * 3 * (sizeof *elecForceGlobal));
+    memset(dEdQGlobal, 0.0, natoms * (sizeof *dEdQGlobal));
+    memset(qGlobal, 0.0, natoms * (sizeof *qGlobal));
 
     if (rank == 0)
     {
       // calculate long-range electrostatics on root using global structure
-      runner_lammps_interface_electrostatics_4g(&nAtoms, &xyzGlobal[0], &runnerTotalCharge, &zGlobal[0],
+      runner_lammps_interface_electrostatics_4g(&natoms, &xyzGlobal[0], &runnerTotalCharge, &zGlobal[0],
         lattice, &lperiodic, &elecNegativityGlobal[0], &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0],
         &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
     }
@@ -372,7 +379,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // Broadcast and unpack electrostatic results
     runnerElecForce = new double[ntotal * 3];
-    unpack_electrostatics(rank, size, inum, ilist, nAtoms, ntotal, runnerElecEnergy, qGlobal,
+    unpack_electrostatics(rank, size, inum, ilist, natoms, ntotal, runnerElecEnergy, qGlobal,
       elecForceGlobal, dEdQGlobal, runnerElecForce, atCharge, dEdQ);
 
     // communicate qeq charges from local atoms to ghost atoms for screening calculation
@@ -393,7 +400,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // determine screening charge constraint (requires global information) and add screening
     // contribution to electrostatic dEdQ, forces and virial
-    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, nAtoms, ntotal, runnerTotalCharge,
+    determineScreeningChargeConstraintAndApplyToElectrostatics(inum, ilist, natoms, ntotal, runnerTotalCharge,
       screeningForces, runnerElecForce, dEdQ, screeningDEdQ, runnerVirial, screeningVirial);
 
     // 4g short range prediction using qeq charges as external features.
@@ -405,26 +412,26 @@ void PairRUNNER::compute(int eflag, int vflag)
     comm->reverse_comm(this);
 
     // pack dEdQ into global structure for determination of lagrange charges
-    pack_force_trick(rank, size, inum, ilist, dEdQ, dEdQGlobal);
+    pack_force_trick(rank, size, natoms, inum, ilist, dEdQ, dEdQGlobal);
 
     double *lambdaGlobal;
     double *forceTrickForce;
-    lambdaGlobal = new double[nAtoms]; // Lagrange charges will be result of force trick part 1
-    forceTrickForce = new double[nAtoms * 3];
-    memset(lambdaGlobal, 0.0, nAtoms * (sizeof *lambdaGlobal));
-    memset(forceTrickForce, 0.0, nAtoms * 3 * (sizeof *forceTrickForce));
+    lambdaGlobal = new double[natoms]; // Lagrange charges will be result of force trick part 1
+    forceTrickForce = new double[natoms * 3];
+    memset(lambdaGlobal, 0.0, natoms * (sizeof *lambdaGlobal));
+    memset(forceTrickForce, 0.0, natoms * 3 * (sizeof *forceTrickForce));
 
     if (rank == 0)
     {
     // serial step determining lagrange charges and force contribution from global dEdQ
-    runner_lammps_interface_force_trick_part_1(&nAtoms, dEdQGlobal, lambdaGlobal,
+    runner_lammps_interface_force_trick_part_1(&natoms, dEdQGlobal, lambdaGlobal,
       forceTrickForce, runnerVirial, runnerLocalVirial);
     }
 
     MPI_Barrier(world);
 
     // unpack force trick part 1 results and apply force contribution to runnerForce
-    unpack_force_trick(rank, size, inum, ilist, nAtoms, ntotal, lambdaCharge, lambdaGlobal,
+    unpack_force_trick(rank, size, inum, ilist, natoms, ntotal, lambdaCharge, lambdaGlobal,
       runnerElecForce, forceTrickForce);
 
     // communicate lagrange charges from local atoms to ghost atoms for calculation of force trick part 2
@@ -450,9 +457,9 @@ void PairRUNNER::compute(int eflag, int vflag)
     delete[] screeningVirial;
     delete[] lambdaGlobal;
     delete[] forceTrickForce;
-    delete[] xyzGlobal; // allocated in pack electrostatics
-    delete[] elecNegativityGlobal; // allocated in pack electrostatics;
-    delete[] zGlobal; // allocated in pack electrostatics
+    delete[] xyzGlobal;
+    delete[] elecNegativityGlobal;
+    delete[] zGlobal;
   }
 
   if (debug) std::cout << "Transferring results from RuNNer to LAMMPS" << std::endl;
@@ -836,24 +843,19 @@ void PairRUNNER::unpack_reverse_comm(int n, int *list, double *buf)
 
 // pack local atom information into one global structure on root for electrostatics calculation.
 // For 3G atProperty is the atomic charge, for 4G atomic electronegativity
-int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, double **x,
+void PairRUNNER::pack_electrostatics(int rank, int size, int natoms, int inum, int *ilist, double **x,
   double *atProperty, int *runnerTypes, double * &xyzGlobal, double * &atPropertyGlobal, int * &zGlobal)
 {
   int i, ii;
   int start, end;
-  int natoms;
 
   // Determine how many local atoms are on each process.
   int *nLocal = new int[size];
   int *nGlobal = new int[size];
   memset(nLocal, 0, size * (sizeof *nLocal));
   memset(nGlobal, 0, size * (sizeof *nGlobal));
-  natoms = 0;
   nLocal[rank] = inum;
   MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
-
-  // And how many atoms there are in this structure
-  MPI_Allreduce(&inum, &natoms, 1, MPI_INT, MPI_SUM, world);
 
   // Determine array element boundaries for communication of positions on each process.
   // xyz is a flat array with 3 * natoms elements.
@@ -862,8 +864,6 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   end = start + inum * 3;
 
   double *xyzLocal = new double[natoms * 3];
-  xyzGlobal = new double[natoms * 3]; // function gets a reference to xyz. Needs to be deleted outside function!
-
   memset(xyzLocal, 0, (natoms * 3) * (sizeof *xyzLocal));
   memset(xyzGlobal, 0, (natoms * 3) * (sizeof *xyzGlobal));
 
@@ -888,9 +888,6 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   // Communication of atomic property and atomic numbers z.
   double *atPropertyLocal = new double[natoms];
   int *zLocal = new int[natoms];
-  atPropertyGlobal = new double[natoms]; // function gets a reference atomic property.
-  // Needs to be deleted outside function!
-  zGlobal = new int[natoms]; // function gets a reference to z. Needs to be deleted outside function!
 
   memset(atPropertyGlobal, 0.0, natoms * (sizeof *atPropertyGlobal));
   memset(atPropertyLocal, 0.0, natoms * (sizeof *atPropertyLocal));
@@ -917,17 +914,16 @@ int PairRUNNER::pack_electrostatics(int rank, int size, int inum, int *ilist, do
   MPI_Reduce(zLocal, zGlobal, natoms, MPI_INT, MPI_SUM, 0, world);
 
   // Deallocation of local arrays.
-  delete [] nLocal;
-  delete [] nGlobal;
-  delete [] xyzLocal;
-  delete [] atPropertyLocal;
-  delete [] zLocal;
+  delete[] nLocal;
+  delete[] nGlobal;
+  delete[] xyzLocal;
+  delete[] atPropertyLocal;
+  delete[] zLocal;
 
-  return natoms;
 }
 
 // Broadcast electrostatic results of one global structure on root and unpack information into local atom arrays.
-void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist, int nAtoms, int ntotal,
+void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist, int natoms, int ntotal,
   double elecEnergy, double * &qGlobal, double * &elecForceGlobal, double * &dEdQGlobal,
   double *elecForce, double *atCharge, double *dEdQ)
 {
@@ -947,10 +943,10 @@ void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist,
   MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
 
   // Broadcast global electrostatic results
-  MPI_Bcast(qGlobal, nAtoms, MPI_DOUBLE, 0, world);
+  MPI_Bcast(qGlobal, natoms, MPI_DOUBLE, 0, world);
   MPI_Bcast(&elecEnergy, 1, MPI_DOUBLE, 0, world);
-  MPI_Bcast(elecForceGlobal, nAtoms * 3, MPI_DOUBLE, 0, world);
-  MPI_Bcast(dEdQGlobal, nAtoms, MPI_DOUBLE, 0, world);
+  MPI_Bcast(elecForceGlobal, natoms * 3, MPI_DOUBLE, 0, world);
+  MPI_Bcast(dEdQGlobal, natoms, MPI_DOUBLE, 0, world);
 
   // Determine starting index for adding global de_dq to local arrays
   start = 0;
@@ -978,28 +974,23 @@ void PairRUNNER::unpack_electrostatics(int rank, int size, int inum, int *ilist,
   }
 
   // Deallocation of local arrays.
-  delete [] nLocal;
-  delete [] nGlobal;
+  delete[] nLocal;
+  delete[] nGlobal;
 }
 
 // pack local atom information into one global structure on root for force trick part 1.
-int PairRUNNER::pack_force_trick(int rank, int size, int inum, int *ilist, double *dEdQ, double * &dEdQGlobal)
+void PairRUNNER::pack_force_trick(int rank, int size, int natoms, int inum, int *ilist, double *dEdQ, double * &dEdQGlobal)
 {
   int i, ii;
   int start, end;
-  int natoms;
 
   // Determine how many local atoms are on each process.
   int *nLocal = new int[size];
   int *nGlobal = new int[size];
   memset(nLocal, 0, size * (sizeof *nLocal));
   memset(nGlobal, 0, size * (sizeof *nGlobal));
-  natoms = 0;
   nLocal[rank] = inum;
   MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
-
-  // And how many atoms there are in this structure
-  MPI_Allreduce(&inum, &natoms, 1, MPI_INT, MPI_SUM, world);
 
   // Communication of dEdQ.
   double *dEdQLocal = new double[natoms];
@@ -1023,22 +1014,18 @@ int PairRUNNER::pack_force_trick(int rank, int size, int inum, int *ilist, doubl
   MPI_Reduce(dEdQLocal, dEdQGlobal, natoms, MPI_DOUBLE, MPI_SUM, 0, world);
 
   // Deallocation of local arrays.
-  delete [] nLocal;
-  delete [] nGlobal;
-  delete [] dEdQLocal;
+  delete[] nLocal;
+  delete[] nGlobal;
+  delete[] dEdQLocal;
 
-  return natoms;
 }
 
 // unpack force trick part 1 for force trick part 2
-void PairRUNNER::unpack_force_trick(int rank, int size, int inum, int *ilist, int nAtoms, int ntotal,
+void PairRUNNER::unpack_force_trick(int rank, int size, int inum, int *ilist, int natoms, int ntotal,
   double *lambdaCharge, double * &lambdaGlobal, double *Force, double * &forceTrickForce)
 {
   int i, ii;
   int start;
-
-  // runner_lammps_interface_force_trick_part_1(&nAtoms, dEdQGlobal, lambdaGlobal,
-  // forceTrickForce, forceTrickVirial, forceTrickLocalVirial);
 
   // set arrays to zero
   double *ForceLocal = new double[ntotal * 3];
@@ -1053,8 +1040,8 @@ void PairRUNNER::unpack_force_trick(int rank, int size, int inum, int *ilist, in
   MPI_Allreduce(nLocal, nGlobal, size, MPI_INT, MPI_SUM, world);
 
   // Broadcast global force trick part 1 results
-  MPI_Bcast(lambdaGlobal, nAtoms, MPI_DOUBLE, 0, world);
-  MPI_Bcast(forceTrickForce, nAtoms * 3, MPI_DOUBLE, 0, world);
+  MPI_Bcast(lambdaGlobal, natoms, MPI_DOUBLE, 0, world);
+  MPI_Bcast(forceTrickForce, natoms * 3, MPI_DOUBLE, 0, world);
 
   // Determine starting index for adding global lambda charge to local arrays
   start = 0;
@@ -1081,15 +1068,15 @@ void PairRUNNER::unpack_force_trick(int rank, int size, int inum, int *ilist, in
   }
 
   // Deallocation of local arrays.
-  delete [] nLocal;
-  delete [] nGlobal;
-  delete [] ForceLocal;
+  delete[] nLocal;
+  delete[] nGlobal;
+  delete[] ForceLocal;
 }
 
 // determine contribution of charge constraint to screened interactions. Requires communication and
 // is therefore determined and applied here and not in RuNNer 2 lib.
 void PairRUNNER::determineScreeningChargeConstraintAndApplyToElectrostatics(int inum, int *ilist,
-  int nAtoms, int ntotal, double totalCharge, double *screeningForce, double *elecForce,
+  int natoms, int ntotal, double totalCharge, double *screeningForce, double *elecForce,
   double *dEdQ, double* screeningDEdQ, double *Virial, double *screeningVirial)
 {
     double dEdQSumLocal = 0.0;
@@ -1109,7 +1096,7 @@ void PairRUNNER::determineScreeningChargeConstraintAndApplyToElectrostatics(int 
     for (ii = 0; ii < inum; ii++)
     {
       i = ilist[ii];
-      dEdQ[i] -= screeningDEdQ[i] - (dEdQSumGlobal - totalCharge) / (double)nAtoms;
+      dEdQ[i] -= screeningDEdQ[i] - (dEdQSumGlobal - totalCharge) / static_cast<double>(natoms);
       // ATTENTION: hardcoded to charge neutral system atm
     }
 

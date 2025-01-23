@@ -62,12 +62,12 @@ class PairRUNNER : public Pair {
   void unpack_forward_comm(int, int, double *) override;
   int pack_reverse_comm(int, int, double *) override;
   void unpack_reverse_comm(int, int *, double *) override;
-  int pack_electrostatics(int, int, int, int *, double **, double *, int *, double * &, double * &, int * &);
+  void pack_electrostatics(int, int, int, int, int *, double **, double *, int *, double * &, double * &, int * &);
   void unpack_electrostatics(int, int, int, int *, int, int, double, double * &, double * &,
    double * &, double *, double *, double *);
   void determineScreeningChargeConstraintAndApplyToElectrostatics(int, int *, int, int, double, double *,
    double *, double *, double *, double *, double *);
-  int pack_force_trick(int, int, int, int *, double *, double * &);
+  void pack_force_trick(int, int, int, int, int *, double *, double * &);
   void unpack_force_trick(int, int, int, int *, int, int, double *, double * &, double *, double * &);
 
  private:
