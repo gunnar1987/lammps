@@ -35,12 +35,13 @@ void runner_lammps_interface_electrostatics_3g(int *, double *, double *, int *,
     double *, double *, double*, double*, double *, double *);
 void runner_lammps_interface_add_electrostatics_3g(int *, int *, double *, double *,
     double *, double *, double *, double *, double *);
-void runner_lammps_interface_electrostatics_4g(int *, double *, double *, int *, double *, bool *, double *,
-    double *, double *, double*, double*, double *, double *);
+void runner_lammps_interface_compute_charges_4g(int *, double *, double *, int *, double *,
+    bool *, double *, double *);
 void runner_lammps_interface_short_range_4g(int *, int *, int *, int *, double *, double *,
-    double *, double *, double *, double *, double *);
-void runner_lammps_interface_force_trick_part_1(int *, double *, double *, double *, double *, double *);
-void runner_lammps_interface_force_trick_part_2(int *, int *, double *, double *, double *, double *);
+    double *, double *, double *);
+void runner_lammps_interface_electrostatics_and_force_trick_part_1(int *, double *, double *, double *,
+    double *, double *);
+void runner_lammps_interface_force_trick_part_2(int *, int *, double *, double *, double *);
 void runner_interface_apply_screening(int *, int *, double *, double *, double *, double *, double *);
 }
 
@@ -65,9 +66,10 @@ class PairRUNNER : public Pair {
   void pack_electrostatics(int, int, int, int, int *, double **, double *, int *, double * &, double * &, int * &);
   void unpack_electrostatics(int, int, int, int *, int, int, double, double * &, double * &,
    double * &, double *, double *, double *);
+  void unpack_charges(int, int, int, int *, int, int, double * &, double *);
   void determineScreeningChargeConstraintAndApplyToElectrostatics(int, int *, int, int, double, double *,
    double *, double *, double *, double *, double *);
-  void pack_force_trick(int, int, int, int, int *, double *, double * &);
+  void pack_dEdQ(int, int, int, int, int *, double *, double * &);
   void unpack_force_trick(int, int, int, int *, int, int, double *, double * &, double *, double * &);
 
  private:
