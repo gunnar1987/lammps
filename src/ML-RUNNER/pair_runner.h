@@ -24,7 +24,7 @@ PairStyle(runner,PairRUNNER);
 
 extern "C" {
 int runner_lammps_api_version();
-void runner_lammps_interface_init(const char *, int *, double *, int *, int *, bool *);
+void runner_lammps_interface_init(const char *, int *, double *, double *, double *, int *, bool *);
 void runner_lammps_interface_transfer_atoms_and_neighbor_lists(int *, int *, int *, int *, int *, int *, int *,
    int *, int *, double *, double *, bool *);
 void runner_lammps_interface_short_range(int *, int *, int *, int *,
@@ -73,7 +73,10 @@ class PairRUNNER : public Pair {
   void unpack_force_trick(int, int, int, int *, int, int, double *, double * &, double *, double * &);
 
  private:
-  double cutoff;
+  double cflength; // length conversion factor
+  double cfenergy; // energy conversion factor
+  double cutoff; // max feature map cutoff
+  char *directory; // directory containing RuNNer potential files
   int *map; // mapping from atom types to elements
 
   int nmax; // allocated size of per-atom arrays

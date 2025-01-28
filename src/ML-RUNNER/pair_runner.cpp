@@ -461,16 +461,16 @@ void PairRUNNER::compute(int eflag, int vflag)
   {
     for (jj = 0; jj < 3; jj++)
     {
-      f[ii][jj] += runnerForce[irunner]; // runnerForce is a vector
+      f[ii][jj] += runnerForce[irunner] / cfenergy * cflength; // runnerForce is a vector
       irunner++;
     }
   }
 
   // Potential energy
-  if (eflag_global) eng_vdwl = runnerEnergy;
+  if (eflag_global) eng_vdwl = runnerEnergy / cfenergy;
 
   // Local energy
-  if (eflag_atom) for (ii = 0; ii < ntotal; ii++) eatom[ii] = runnerLocalE[ii];
+  if (eflag_atom) for (ii = 0; ii < ntotal; ii++) eatom[ii] = runnerLocalE[ii] / cfenergy;
 
   // Charges if charge atom style is used
   if (q != NULL){
@@ -480,12 +480,12 @@ void PairRUNNER::compute(int eflag, int vflag)
   // Stress
   if (vflag_global)
   {
-    virial[0] = runnerVirial[0];
-    virial[1] = runnerVirial[4];
-    virial[2] = runnerVirial[8];
-    virial[3] = runnerVirial[0];
-    virial[4] = runnerVirial[6];
-    virial[5] = runnerVirial[7];
+    virial[0] = runnerVirial[0] / cfenergy;
+    virial[1] = runnerVirial[4] / cfenergy;
+    virial[2] = runnerVirial[8] / cfenergy;
+    virial[3] = runnerVirial[0] / cfenergy;
+    virial[4] = runnerVirial[6] / cfenergy;
+    virial[5] = runnerVirial[7] / cfenergy;
   }
 
   // Local stress
@@ -493,12 +493,12 @@ void PairRUNNER::compute(int eflag, int vflag)
   {
     int iatom = 0;
     for (ii = 0; ii < ntotal; ii++) {
-      vatom[ii][0] += runnerLocalVirial[iatom + 0];
-      vatom[ii][1] += runnerLocalVirial[iatom + 4];
-      vatom[ii][2] += runnerLocalVirial[iatom + 8];
-      vatom[ii][3] += runnerLocalVirial[iatom + 0];
-      vatom[ii][4] += runnerLocalVirial[iatom + 6];
-      vatom[ii][5] += runnerLocalVirial[iatom + 7];
+      vatom[ii][0] += runnerLocalVirial[iatom + 0] / cfenergy;
+      vatom[ii][1] += runnerLocalVirial[iatom + 4] / cfenergy;
+      vatom[ii][2] += runnerLocalVirial[iatom + 8] / cfenergy;
+      vatom[ii][3] += runnerLocalVirial[iatom + 0] / cfenergy;
+      vatom[ii][4] += runnerLocalVirial[iatom + 6] / cfenergy;
+      vatom[ii][5] += runnerLocalVirial[iatom + 7] / cfenergy;
       iatom += 9;
     }
   }
@@ -518,9 +518,35 @@ void PairRUNNER::compute(int eflag, int vflag)
 /* ----------------------------------------------------------------------
    global settings
 ------------------------------------------------------------------------- */
-void PairRUNNER::settings(int narg, char ** /* arg */)
+void PairRUNNER::settings(int narg, char **arg)
 {
-  if (narg != 0) error->all(FLERR, "Illegal pair_style command");
+  int iarg = 0;
+
+  // default settings
+  directory = utils::strdup("./");
+  cflength = 1.0;
+  cfenergy = 1.0;
+
+  while (iarg < narg) {
+    // set RuNNer potential directory
+    if (strcmp(arg[iarg], "dir") == 0) {
+      if (iarg + 2 > narg) error->all(FLERR, "Illegal pair_style command");
+      delete[] directory;
+      directory = utils::strdup(arg[iarg + 1]);
+      iarg += 2;
+      // length unit conversion factor
+    } else if (strcmp(arg[iarg], "cflength") == 0) {
+      if (iarg + 2 > narg) error->all(FLERR, "Illegal pair_style command");
+      cflength = utils::numeric(FLERR, arg[iarg + 1], false, lmp);
+      iarg += 2;
+      // energy unit conversion factor
+    } else if (strcmp(arg[iarg], "cfenergy") == 0) {
+      if (iarg + 2 > narg) error->all(FLERR, "Illegal pair_style command");
+      cfenergy = utils::numeric(FLERR, arg[iarg + 1], false, lmp);
+      iarg += 2;
+    } else
+      error->all(FLERR, "Illegal pair_style command");
+  }
 
   // check if linked to the correct RUNNER library API version
   if (runner_lammps_api_version() != 1)
@@ -571,16 +597,6 @@ void PairRUNNER::coeff(int narg, char **arg)
       }
 
   if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients");
-
-  // Read model coefficients and do initialization on RuNNer side.
-  // Returns max cutoff for LAMMPS neighborlist.
-  // Also returns booleans if additional atomic properties are predicted,
-  // which need to be communicated between local and ghost atoms.
-  std::string path = "."; // TODO: get path from LAMMPS
-  int n_path_len = strlen(path.c_str());
-  runner_lammps_interface_init(path.c_str(),&n_path_len, &cutoff,
-    &comm->me, &nnpGeneration, &lHirshfeldVdw);
-
 }
 
 /* ----------------------------------------------------------------------
@@ -596,6 +612,14 @@ void PairRUNNER::init_style()
 
   // request full neighbor list
   neighbor->add_request(this, NeighConst::REQ_FULL);
+
+  // Read model coefficients and do initialization on RuNNer side.
+  // Returns max cutoff for LAMMPS neighborlist.
+  // Also returns booleans if additional atomic properties are predicted,
+  // which need to be communicated between local and ghost atoms.
+  int n_directory_len = strlen(directory);
+  runner_lammps_interface_init(directory, &n_directory_len, &cutoff, &cfenergy, &cflength,
+    &nnpGeneration, &lHirshfeldVdw);
 }
 
 /* ----------------------------------------------------------------------
