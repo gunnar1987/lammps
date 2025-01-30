@@ -79,6 +79,7 @@ PairRUNNER::~PairRUNNER()
     memory->destroy(dEdQ);
     memory->destroy(screeningDEdQ);
     delete[] map;
+    delete[] directory;
   }
 }
 
