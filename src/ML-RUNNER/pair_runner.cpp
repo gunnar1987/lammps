@@ -47,7 +47,11 @@ PairRUNNER::PairRUNNER(LAMMPS *lmp) : Pair(lmp)
   one_coeff = 1; // parameters are read from input.nn, therefore pair_coeff only has single command
   manybody_flag = 1; // Many-body potential flag
   unit_convert_flag = 0; // Currently no unit conversion
-  no_virial_fdotr_compute = 1; // We calculate the virial ourselves and do not need to call virial_fdotr()
+  no_virial_fdotr_compute = 1; // We generally calculate the virial ourselves
+                               // and do not need to call virial_fdotr().
+                               // In case of 2G HDNNP, we call virial_fdotr()
+                               // for performace reasons.
+                               // flag is then overwritten in init_style().
   map = nullptr;
 
   // additional per-atom arrays for communication
@@ -479,6 +483,10 @@ void PairRUNNER::compute(int eflag, int vflag)
   }
 
   // Stress
+
+  // In case of 2G HDNNP, virial can be calculated via F dot r.
+  if (vflag_fdotr) virial_fdotr_compute();
+
   if (vflag_global)
   {
     virial[0] = runnerVirial[0] / cfenergy;
@@ -621,6 +629,8 @@ void PairRUNNER::init_style()
   int n_directory_len = strlen(directory);
   runner_lammps_interface_init(directory, &n_directory_len, &cutoff, &cfenergy, &cflength,
     &nnpGeneration, &lHirshfeldVdw);
+
+  if (nnpGeneration == 2) no_virial_fdotr_compute = 0; // Overwrite default flag
 }
 
 /* ----------------------------------------------------------------------
