@@ -162,7 +162,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   // Set additional per-atom arrays to zero
   memset(atCharge, 0.0, nmax * (sizeof *atCharge));
-  memset(hirshVolume, 0.0, nmax * (sizeof *atCharge));
+  memset(hirshVolume, 0.0, nmax * (sizeof *hirshVolume));
   memset(elecNegativity, 0.0, nmax * (sizeof *elecNegativity));
   memset(lambdaCharge, 0.0, nmax * (sizeof *lambdaCharge));
   memset(dEdQ, 0.0, nmax * (sizeof *dEdQ));
