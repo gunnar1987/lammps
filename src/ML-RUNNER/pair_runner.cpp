@@ -98,6 +98,18 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   ev_init(eflag, vflag); // initializes flags, which signal if energy and virial need to be tallied.
 
+  // Per-atom stress calculation not implemented in RuNNer 2.
+  // Could be implemented for 2G potentials, but not for 3G or 4G due to global
+  // dependence of electrostatic interactions.
+  if (vflag_atom)
+  {
+    if (comm->me == 0)
+    {
+      std::cout << "Error in PairRUNNER. Calculation of per-atom virial not supported." << std::endl;
+    }
+    MPI_Abort(world, -1);
+  }
+
   double **x = atom->x;
   double **f = atom->f;
   double *q = atom->q;
@@ -110,10 +122,9 @@ void PairRUNNER::compute(int eflag, int vflag)
 
   // Interface variables
   bool lperiodic;
-  double *runnerLocalE, *runnerForce, *runnerLocalVirial, *runnerVirial, runnerEnergy, *lattice, runnerTotalCharge;
+  double *runnerLocalE, *runnerForce, *runnerVirial, runnerEnergy, *lattice, runnerTotalCharge;
   runnerLocalE = new double[ntotal];
   runnerForce = new double[ntotal * 3];
-  runnerLocalVirial = new double[ntotal * 9];
   runnerVirial = new double[9];
   lattice = new double[9];
 
@@ -122,23 +133,12 @@ void PairRUNNER::compute(int eflag, int vflag)
   runnerTotalCharge = 0.0;
   memset(runnerLocalE, 0.0, ntotal * (sizeof *runnerLocalE));
   memset(runnerForce, 0.0, (ntotal * 3) * (sizeof *runnerForce));
-  memset(runnerLocalVirial, 0.0, (ntotal * 9) * (sizeof *runnerLocalVirial));
   memset(runnerVirial, 0.0, 9 * (sizeof * runnerVirial));
 
   // MPI
   int size, rank;
   rank = comm->me;
   size = comm->nprocs;
-
-  if (nlocal == 0)
-  {
-    std::cout << "Error in PairRUNNER. No local atoms on process " << rank << "." << std::endl;
-    std::cout << "Try adjusting simulation box partitioning with the `balance` command" << std::endl;
-    std::cout << "or restart the simulation using fewer processors." << std::endl;
-    MPI_Abort(world, -1);
-  }
-
-  MPI_Barrier(world);
 
   if (debug) std::cout << "Entered PairRUNNER::compute" << std::endl;
 
@@ -250,7 +250,7 @@ void PairRUNNER::compute(int eflag, int vflag)
   if (debug) std::cout << "RuNNer short-range predicition" << std::endl;
 
   runner_lammps_interface_short_range(&nlocal, &nghost, &inum, ilist,
-    &runnerEnergy, runnerLocalE, runnerVirial, runnerLocalVirial,
+    &runnerEnergy, runnerLocalE, runnerVirial,
     runnerForce, hirshVolume, atCharge, elecNegativity);
 
   if (lHirshfeldVdw)
@@ -264,7 +264,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     // calculate dispersion energies and forces using Hirshfeld volumes and
     // volume gradients (stored on runner side)
     runner_lammps_interface_hirshfeld_vdw(&nlocal, &nghost, &inum, ilist,
-      hirshVolume, &runnerEnergy, runnerForce, runnerVirial, runnerLocalVirial);
+      hirshVolume, &runnerEnergy, runnerForce, runnerVirial);
   }
 
   if (nnpGeneration == 3)
@@ -296,7 +296,7 @@ void PairRUNNER::compute(int eflag, int vflag)
     {
       // calculate long-range electrostatics on root using global structure
       runner_lammps_interface_electrostatics_3g(&natoms, &xyzGlobal[0], &runnerTotalCharge, &zGlobal[0], lattice, &lperiodic,
-        &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0], &dEdQGlobal[0], runnerVirial, runnerLocalVirial);
+        &qGlobal[0], &runnerElecEnergy, &elecForceGlobal[0], &dEdQGlobal[0], runnerVirial);
     }
 
     MPI_Barrier(world);
@@ -312,7 +312,10 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // Apply screening
     screeningForces = new double[ntotal * 3];
+    memset(screeningForces, 0.0, ntotal * 3 * (sizeof *screeningForces));
     screeningVirial = new double[9];
+    memset(screeningVirial, 0.0, 9 * (sizeof *screeningVirial));
+
     runner_interface_apply_screening(&nlocal, &nghost, atCharge, &runnerElecEnergy, screeningForces,
       screeningDEdQ, screeningVirial);
 
@@ -327,7 +330,7 @@ void PairRUNNER::compute(int eflag, int vflag)
 
     // add electrostatics contributions to short-range part
     runner_lammps_interface_add_electrostatics_3g(&nlocal, &nghost, &runnerElecEnergy,
-      runnerElecForce, dEdQ, &runnerEnergy, runnerForce, runnerVirial, runnerLocalVirial);
+      runnerElecForce, dEdQ, &runnerEnergy, runnerForce, runnerVirial);
 
     delete[] elecForceGlobal;
     delete[] dEdQGlobal;
@@ -379,7 +382,10 @@ void PairRUNNER::compute(int eflag, int vflag)
     // Apply screening
     double *screeningForces, *screeningVirial;
     screeningForces = new double[ntotal * 3];
+    memset(screeningForces, 0.0, ntotal * 3 * (sizeof *screeningForces));
     screeningVirial = new double[9];
+    memset(screeningVirial, 0.0, 9 * (sizeof *screeningVirial));
+
     runner_interface_apply_screening(&nlocal, &nghost, atCharge, &runnerElecEnergy, screeningForces,
       screeningDEdQ, screeningVirial);
 
@@ -489,21 +495,6 @@ void PairRUNNER::compute(int eflag, int vflag)
     virial[5] = runnerVirial[7] / cfenergy;
   }
 
-  // Local stress
-  if (vflag_atom)
-  {
-    int iatom = 0;
-    for (ii = 0; ii < ntotal; ii++) {
-      vatom[ii][0] += runnerLocalVirial[iatom + 0] / cfenergy;
-      vatom[ii][1] += runnerLocalVirial[iatom + 4] / cfenergy;
-      vatom[ii][2] += runnerLocalVirial[iatom + 8] / cfenergy;
-      vatom[ii][3] += runnerLocalVirial[iatom + 0] / cfenergy;
-      vatom[ii][4] += runnerLocalVirial[iatom + 6] / cfenergy;
-      vatom[ii][5] += runnerLocalVirial[iatom + 7] / cfenergy;
-      iatom += 9;
-    }
-  }
-
   // Deallocate internal arrays
   delete[] runnerTypes;
   delete[] runnerNumNeigh;
@@ -512,7 +503,6 @@ void PairRUNNER::compute(int eflag, int vflag)
   delete[] runnerLocalE;
   delete[] runnerForce;
   delete[] runnerVirial;
-  delete[] runnerLocalVirial;
   delete[] lattice;
 }
 

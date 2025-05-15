@@ -28,13 +28,13 @@ void runner_lammps_interface_init(const char *, int *, double *, double *, doubl
 void runner_lammps_interface_transfer_atoms_and_neighbor_lists(int *, int *, int *, int *, int *, int *, int *,
    int *, int *, double *, double *, bool *);
 void runner_lammps_interface_short_range(int *, int *, int *, int *,
-   double *, double *, double *, double *, double *, double *, double *, double *);
+   double *, double *, double *, double *, double *, double *, double *);
 void runner_lammps_interface_hirshfeld_vdw(int *, int *, int *, int *, double *, double *,
-   double *, double *, double *);
+   double *, double *);
 void runner_lammps_interface_electrostatics_3g(int *, double *, double *, int *, double *, bool *,
-    double *, double *, double*, double*, double *, double *);
+    double *, double *, double*, double*, double *);
 void runner_lammps_interface_add_electrostatics_3g(int *, int *, double *, double *,
-    double *, double *, double *, double *, double *);
+    double *, double *, double *, double *);
 void runner_lammps_interface_compute_charges_4g(int *, double *, double *, int *, double *,
     bool *, double *, double *);
 void runner_lammps_interface_short_range_4g(int *, int *, int *, int *, double *, double *,
